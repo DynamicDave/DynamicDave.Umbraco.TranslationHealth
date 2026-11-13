@@ -18,7 +18,7 @@ export class DdTranslationHealthMissingElement extends UmbLitElement {
   @state() private _group = '';
   @state() private _search = '';
   @state() private _loading = true;
-  @state() private _failed = false;
+  @state() private _failed?: 'loadFailed' | 'forbidden';
 
   #request = 0;
   #searchTimer?: ReturnType<typeof setTimeout>;
@@ -59,8 +59,9 @@ export class DdTranslationHealthMissingElement extends UmbLitElement {
     let counts: MissingCountModel[] = [];
     let total = 0;
     let failed = false;
+    let forbidden = false;
     try {
-      const { data } = await TranslationDictionaryService.getMissingTranslations({
+      const { data, response } = await TranslationDictionaryService.getMissingTranslations({
         throwOnError: false,
         query: {
           culture: this._culture || undefined,
@@ -71,6 +72,7 @@ export class DdTranslationHealthMissingElement extends UmbLitElement {
         },
       });
       failed = !data;
+      forbidden = response?.status === 403;
       items = data?.items ?? [];
       counts = data?.counts ?? [];
       total = data?.total ?? 0;
@@ -85,9 +87,10 @@ export class DdTranslationHealthMissingElement extends UmbLitElement {
       return;
     }
     this._items = items;
-    this._counts = counts;
+    // A failed load keeps the cards and filters of the last good one.
+    if (!failed) this._counts = counts;
     this._total = total;
-    this._failed = failed;
+    this._failed = forbidden ? 'forbidden' : failed ? 'loadFailed' : undefined;
     this._loading = false;
   }
 
@@ -116,11 +119,6 @@ export class DdTranslationHealthMissingElement extends UmbLitElement {
   }
 
   override render() {
-    if (this._failed && !this._loading) {
-      return html`<uui-box headline=${this.localize.term('ddTranslationHealth_missingTitle')}>
-        <p>${this.localize.term('ddTranslationHealth_loadFailed')}</p>
-      </uui-box>`;
-    }
     return html`<uui-box headline=${this.localize.term('ddTranslationHealth_missingTitle')}>
       ${this.#renderCounts()} ${this.#renderFilters()} ${this.#renderTable()}
     </uui-box>`;
@@ -176,6 +174,12 @@ export class DdTranslationHealthMissingElement extends UmbLitElement {
   }
 
   #renderTable() {
+    if (this._failed && !this._loading) {
+      return html`<p class="error">${this.localize.term(`ddTranslationHealth_${this._failed}`)}</p>
+        ${this._failed === 'loadFailed'
+          ? html`<uui-button look="secondary" label=${this.localize.term('ddTranslationHealth_retry')} @click=${() => void this.#load()}></uui-button>`
+          : nothing}`;
+    }
     if (this._loading && this._items.length === 0) return html`<uui-loader></uui-loader>`;
     if (this._items.length === 0) return html`<p class="muted">${this.localize.term('ddTranslationHealth_noMissing')}</p>`;
     const pages = Math.max(1, Math.ceil(this._total / PAGE_SIZE));

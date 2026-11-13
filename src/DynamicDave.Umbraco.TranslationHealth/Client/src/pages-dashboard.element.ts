@@ -23,6 +23,7 @@ import {
   errorTerm,
   failureTemplate,
   fileNameFrom,
+  outdatedAge,
   isJob,
   notify,
   progressTemplate,
@@ -31,6 +32,9 @@ import {
   statusColor,
   statusTerm,
 } from './shared.js';
+
+/** Consecutive failed job requests after which polling stops. */
+const MAX_FAILURES = 3;
 
 const STATUS_FILTERS: Array<{ value: CellFilter; term: string }> = [
   { value: 'AnyIssue', term: 'ddTranslationHealth_anyIssue' },
@@ -135,12 +139,14 @@ export class DdTranslationHealthPagesElement extends UmbLitElement {
     let rows: OverviewRowModel[] = [];
     let total = 0;
     let failed = false;
+    let forbidden = false;
     try {
-      const { data } = await TranslationHealthService.getOverview({
+      const { data, response } = await TranslationHealthService.getOverview({
         throwOnError: false,
         query: { ...this.#query(), skip: (this._page - 1) * PAGE_SIZE, take: PAGE_SIZE },
       });
       failed = !data;
+      forbidden = response?.status === 403;
       rows = data?.items ?? [];
       total = data?.total ?? 0;
     } catch {
@@ -155,7 +161,7 @@ export class DdTranslationHealthPagesElement extends UmbLitElement {
     }
     this._rows = rows;
     this._total = total;
-    this._failed = failed ? 'loadFailed' : undefined;
+    this._failed = forbidden ? 'forbidden' : failed ? 'loadFailed' : undefined;
     this._loading = false;
   }
 
@@ -187,8 +193,10 @@ export class DdTranslationHealthPagesElement extends UmbLitElement {
     clearTimeout(this.#pollTimer);
     let job: JobStateModel | undefined;
     let failed = false;
+    let status: number | undefined;
     try {
       const { data, error, response } = await TranslationHealthService.getCurrentJob({ throwOnError: false });
+      status = response?.status;
       failed = error !== undefined && response?.status !== 204;
       job = isJob(data) ? data : undefined; // 204: no job yet
     } catch {
@@ -202,6 +210,8 @@ export class DdTranslationHealthPagesElement extends UmbLitElement {
     }
     if (failed) {
       this.#failures++;
+      // No access (403) or no endpoint (404) will not get better, and a few failures in a row mean no job info: stop polling.
+      if (status === 403 || status === 404 || this.#failures >= MAX_FAILURES) return;
       this.#pollTimer = setTimeout(() => void this.#loadJob(), Math.min(POLL_MS * 2 ** (this.#failures - 1), MAX_POLL_MS));
     } else if (job?.status === 'Running') {
       this.#pollTimer = setTimeout(() => void this.#loadJob(), POLL_MS);
@@ -216,7 +226,8 @@ export class DdTranslationHealthPagesElement extends UmbLitElement {
     this._rebuilding = true;
     this._message = undefined;
     try {
-      const { data, error } = await TranslationHealthService.rebuildOverview({ throwOnError: false });
+      const { data, error, response } = await TranslationHealthService.rebuildOverview({ throwOnError: false });
+      if (!this.#connected) return; // detached meanwhile: no state, no timer
       if (isJob(data)) {
         this._job = data;
         clearTimeout(this.#pollTimer);
@@ -228,10 +239,10 @@ export class DdTranslationHealthPagesElement extends UmbLitElement {
         clearTimeout(this.#pollTimer);
         this.#pollTimer = setTimeout(() => void this.#loadJob(), POLL_MS);
       } else {
-        this._message = this.localize.term(errorTerm(errorCode(error)));
+        this._message = this.localize.term(response?.status === 403 ? 'ddTranslationHealth_forbidden' : errorTerm(errorCode(error)));
       }
     } catch {
-      this._message = this.localize.term('ddTranslationHealth_loadFailed');
+      if (this.#connected) this._message = this.localize.term('ddTranslationHealth_loadFailed');
     }
     this._rebuilding = false;
   }
@@ -250,7 +261,7 @@ export class DdTranslationHealthPagesElement extends UmbLitElement {
     }
     this._exporting = false;
     if (!blob) {
-      void notify(this, 'danger', this.localize.term('ddTranslationHealth_exportFailed'));
+      void notify(this, 'danger', this.localize.term(response?.status === 403 ? 'ddTranslationHealth_forbidden' : 'ddTranslationHealth_exportFailed'));
       return;
     }
     saveBlob(blob, fileNameFrom(response, 'translation-overview.csv'));
@@ -487,7 +498,7 @@ export class DdTranslationHealthPagesElement extends UmbLitElement {
     const days = daysSince(cell.outdatedSinceUtc);
     return html`<a class="cell-link" href=${href}>
       <uui-tag color="warning">${this.localize.term('ddTranslationHealth_outdated')}</uui-tag>
-      <span class="sub">${this.localize.term(statusTerm(cell.status))}${days !== undefined ? ` · ${this.localize.term('ddTranslationHealth_outdatedFor', days)}` : ''}</span>
+      <span class="sub">${this.localize.term(statusTerm(cell.status))}${days !== undefined ? ` · ${outdatedAge(this.localize, days)}` : ''}</span>
       ${cell.mode === 'Date'
         ? html`<uui-icon name="icon-info" title=${this.localize.term('ddTranslationHealth_estimated')}></uui-icon>`
         : nothing}

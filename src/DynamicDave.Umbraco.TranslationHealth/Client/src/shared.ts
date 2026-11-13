@@ -86,6 +86,12 @@ export function daysSince(utc: string | null | undefined, now = Date.now()) {
   return Number.isNaN(time) ? undefined : Math.max(0, Math.floor((now - time) / 86_400_000));
 }
 
+/** "Outdated today", "Outdated 1 day" or "Outdated N days". */
+export function outdatedAge(localize: UmbLocalizationController, days: number) {
+  if (days < 1) return localize.term('ddTranslationHealth_outdatedToday');
+  return days === 1 ? localize.term('ddTranslationHealth_outdatedOneDay') : localize.term('ddTranslationHealth_outdatedFor', days);
+}
+
 /** The file name from a Content-Disposition header, or the fallback. */
 export function fileNameFrom(response: Response | undefined, fallback: string) {
   const header = response?.headers.get('Content-Disposition') ?? '';

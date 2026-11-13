@@ -460,10 +460,12 @@ export class DdTranslationHealthImportElement extends UmbLitElement {
                 <uui-table-head>
                   <uui-table-head-cell>
                     <uui-checkbox
-                      aria-label=${this.localize.term('ddTranslationHealth_selectAll')}
+                      label=${this.localize.term('ddTranslationHealth_selectAll')}
+                      title=${this.localize.term('ddTranslationHealth_selectAll')}
                       ?checked=${allSelected}
                       ?disabled=${selectable.length === 0}
-                      @change=${(e: UUIBooleanInputEvent) => this.#toggleAll(e.target.checked)}></uui-checkbox>
+                      @change=${(e: UUIBooleanInputEvent) => this.#toggleAll(e.target.checked)}
+                      ><span hidden></span></uui-checkbox>
                   </uui-table-head-cell>
                   <uui-table-head-cell>${this.localize.term('ddTranslationHealth_record')}</uui-table-head-cell>
                   <uui-table-head-cell>${this.localize.term('ddTranslationHealth_key')}</uui-table-head-cell>
@@ -505,9 +507,10 @@ export class DdTranslationHealthImportElement extends UmbLitElement {
       <uui-table-cell>
         ${selectable
           ? html`<uui-checkbox
-              aria-label=${this.localize.term('ddTranslationHealth_select')}
+              label=${this.localize.term('ddTranslationHealth_select')}
               ?checked=${this._selected.has(item.id)}
-              @change=${(e: UUIBooleanInputEvent) => this.#toggle(item.id, e.target.checked)}></uui-checkbox>`
+              @change=${(e: UUIBooleanInputEvent) => this.#toggle(item.id, e.target.checked)}
+              ><span hidden></span></uui-checkbox>`
           : nothing}
       </uui-table-cell>
       <uui-table-cell>${item.rowNumber}</uui-table-cell>
@@ -620,6 +623,8 @@ export class DdTranslationHealthHistoryElement extends UmbLitElement {
   }
 
   async #openDetail(item: ImportModel, page = 1) {
+    // Never show the rows of the previously opened import under another one.
+    if (this._open?.key !== item.key) this._detail = undefined;
     this._open = item;
     this._detailPage = page;
     this._message = undefined;

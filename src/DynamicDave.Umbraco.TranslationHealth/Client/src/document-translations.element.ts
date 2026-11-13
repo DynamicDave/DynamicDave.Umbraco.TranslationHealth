@@ -3,7 +3,7 @@ import { UmbLitElement } from '@umbraco-cms/backoffice/lit-element';
 import { UMB_DOCUMENT_WORKSPACE_CONTEXT } from '@umbraco-cms/backoffice/document';
 import { TranslationHealthService } from './api/index.js';
 import type { DocumentTranslationModel, DocumentTranslationsResponse } from './api/index.js';
-import { daysSince, documentHref, errorCode, errorTerm, notify, sharedStyles, statusColor, statusTerm } from './shared.js';
+import { daysSince, outdatedAge, documentHref, errorCode, errorTerm, notify, sharedStyles, statusColor, statusTerm } from './shared.js';
 
 /** The "Translations" tab of a document (spec 4.5): one row per language with its state, and "Mark as up to date". */
 @customElement('dd-translation-health-document')
@@ -15,6 +15,8 @@ export class DdTranslationHealthDocumentElement extends UmbLitElement {
   #key?: string;
   /** Incremented per load so out-of-order responses (and responses for a previous document) are ignored. */
   #requestId = 0;
+  /** The persisted-data observer fires once on first consume, right after the unique one already loaded. */
+  #persistedSeen = false;
 
   constructor() {
     super();
@@ -24,6 +26,7 @@ export class DdTranslationHealthDocumentElement extends UmbLitElement {
         (unique) => {
           if (unique && unique !== this.#key) {
             this.#key = unique;
+            this.#persistedSeen = false;
             // Never show the previous document's rows under a new document.
             this._data = undefined;
             this._error = false;
@@ -36,7 +39,10 @@ export class DdTranslationHealthDocumentElement extends UmbLitElement {
       this.observe(
         ctx?.persistedData,
         (data) => {
-          if (data && data.unique === this.#key) void this.#load();
+          const first = !this.#persistedSeen;
+          this.#persistedSeen = true;
+          // The first value is the state that the unique observer has just loaded.
+          if (!first && data && data.unique === this.#key) void this.#load();
         },
         'ddTranslationHealthPersisted',
       );
@@ -149,7 +155,7 @@ export class DdTranslationHealthDocumentElement extends UmbLitElement {
       return html`<uui-tag color=${statusColor(t.status)}>${this.localize.term(statusTerm(t.status))}</uui-tag>${marked}`;
     }
     return html`<uui-tag color="warning">${this.localize.term('ddTranslationHealth_outdated')}</uui-tag>
-      <span class="sub">${this.localize.term(statusTerm(t.status))}${days !== undefined ? ` · ${this.localize.term('ddTranslationHealth_outdatedFor', days)}` : ''}</span>
+      <span class="sub">${this.localize.term(statusTerm(t.status))}${days !== undefined ? ` · ${outdatedAge(this.localize, days)}` : ''}</span>
       ${t.mode === 'Date' ? html`<uui-icon name="icon-info" title=${this.localize.term('ddTranslationHealth_estimated')}></uui-icon>` : nothing}`;
   }
 
