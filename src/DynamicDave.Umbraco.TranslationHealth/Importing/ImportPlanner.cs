@@ -8,7 +8,6 @@ public static class ImportPlanner
 {
     private const string IdPrefix = "id:";
 
-    /// <param name="installedCultures">All installed cultures; when null every culture counts as installed.</param>
     public static ImportPlan Plan(
         Guid id,
         string fileName,
@@ -16,8 +15,8 @@ public static class ImportPlanner
         IReadOnlyList<DictionaryEntry> current,
         string defaultCulture,
         IReadOnlySet<string> editableCultures,
-        ImportOptions options,
-        IReadOnlySet<string>? installedCultures = null)
+        IReadOnlySet<string> installedCultures,
+        ImportOptions options)
     {
         var byKey = new Dictionary<string, DictionaryEntry>(StringComparer.OrdinalIgnoreCase);
         var byId = new Dictionary<Guid, DictionaryEntry>();
@@ -27,16 +26,17 @@ public static class ImportPlanner
             byId.TryAdd(entry.Id, entry);
         }
 
-        var installed = installedCultures?.ToDictionary(c => c, c => c, StringComparer.OrdinalIgnoreCase);
+        var installed = installedCultures.ToDictionary(c => c, c => c, StringComparer.OrdinalIgnoreCase);
         var editable = new HashSet<string>(editableCultures, StringComparer.OrdinalIgnoreCase);
 
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var items = new List<PlanItem>();
 
         void Add(ImportRow row, string key, string culture, ImportOutcome outcome, ImportErrorReason reason,
-            string? currentValue, string newValue, string? fileSource, string? currentSource)
+            string? currentValue, string newValue, string? fileSource, string? currentSource, bool existing = true)
         {
-            var sourceChanged = file.Format == ImportFileFormat.Xliff
+            var sourceChanged = existing
+                && file.Format == ImportFileFormat.Xliff
                 && fileSource is not null
                 && !string.Equals(NormalizeLineEndings(fileSource), NormalizeLineEndings(currentSource ?? string.Empty), StringComparison.Ordinal);
             var selected = outcome is ImportOutcome.NewValue or ImportOutcome.Overwrite or ImportOutcome.NewKey && !sourceChanged;
@@ -44,7 +44,7 @@ public static class ImportPlanner
                 fileSource, currentSource, sourceChanged, selected));
         }
 
-        string CultureName(string culture) => installed is not null && installed.TryGetValue(culture, out var name) ? name : culture;
+        string CultureName(string culture) => installed.TryGetValue(culture, out var name) ? name : culture;
 
         foreach (var row in file.Rows)
         {
@@ -61,7 +61,7 @@ public static class ImportPlanner
             {
                 foreach (var (culture, value) in values)
                 {
-                    Add(row, rowKey, CultureName(culture), ImportOutcome.Error, ImportErrorReason.EmptyKey, null, value, fileSource, null);
+                    Add(row, rowKey, CultureName(culture), ImportOutcome.Error, ImportErrorReason.EmptyKey, null, value, fileSource, null, false);
                 }
 
                 continue;
@@ -79,19 +79,19 @@ public static class ImportPlanner
 
                 if (duplicate)
                 {
-                    Add(row, key, name, ImportOutcome.Error, ImportErrorReason.DuplicateKey, null, value, fileSource, currentSource);
+                    Add(row, key, name, ImportOutcome.Error, ImportErrorReason.DuplicateKey, null, value, fileSource, currentSource, entry is not null);
                     continue;
                 }
 
-                if (installed is not null && !installed.ContainsKey(culture))
+                if (!installed.ContainsKey(culture))
                 {
-                    Add(row, key, name, ImportOutcome.Error, ImportErrorReason.UnknownLanguage, null, value, fileSource, currentSource);
+                    Add(row, key, name, ImportOutcome.Error, ImportErrorReason.UnknownLanguage, null, value, fileSource, currentSource, entry is not null);
                     continue;
                 }
 
                 if (!editable.Contains(culture))
                 {
-                    Add(row, key, name, ImportOutcome.Error, ImportErrorReason.LanguageNotAllowed, null, value, fileSource, currentSource);
+                    Add(row, key, name, ImportOutcome.Error, ImportErrorReason.LanguageNotAllowed, null, value, fileSource, currentSource, entry is not null);
                     continue;
                 }
 
@@ -100,7 +100,7 @@ public static class ImportPlanner
                     var outcome = options.CreateKeys && !rowKey.StartsWith(IdPrefix, StringComparison.OrdinalIgnoreCase)
                         ? ImportOutcome.NewKey
                         : ImportOutcome.SkippedUnknownKey;
-                    Add(row, key, name, outcome, ImportErrorReason.None, null, value, fileSource, null);
+                    Add(row, key, name, outcome, ImportErrorReason.None, null, value, fileSource, null, false);
                     continue;
                 }
 

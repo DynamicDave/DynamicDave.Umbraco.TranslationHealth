@@ -21,8 +21,8 @@ public class ImportPlannerTests
 
     private static ImportPlan Plan(ImportFile file, DictionaryEntry[] current, ImportOptions? options = null,
         IReadOnlySet<string>? editable = null) =>
-        ImportPlanner.Plan(Guid.NewGuid(), "file.csv", file, current, "en-US", editable ?? AllEditable,
-            options ?? new ImportOptions(false, false), Installed);
+        ImportPlanner.Plan(Guid.NewGuid(), "file.csv", file, current, "en-US", editable ?? AllEditable, Installed,
+            options ?? new ImportOptions(false, false));
 
     [Fact]
     public void Empty_value_is_new_value()
@@ -241,5 +241,16 @@ public class ImportPlannerTests
         var plan = Plan(Csv(Row(2, "A", ("nl-NL", "x"))), [Entry("A", null, ("en-US", "New"))]);
 
         Assert.False(Assert.Single(plan.Items).SourceChanged);
+    }
+
+    [Fact]
+    public void New_key_with_source_is_not_flagged_and_is_selected()
+    {
+        var plan = Plan(Xliff("Some text", "Brand.New"), [], new ImportOptions(false, true));
+
+        var item = Assert.Single(plan.Items);
+        Assert.Equal(ImportOutcome.NewKey, item.Outcome);
+        Assert.False(item.SourceChanged);
+        Assert.True(item.SelectedByDefault);
     }
 }
