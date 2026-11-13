@@ -62,7 +62,7 @@ public class RebuildJobTests
     [Fact]
     public async Task Every_batch_waits_for_editors_to_pause_before_it_writes()
     {
-        AddDocuments(450);
+        AddDocuments(2300);
         var order = new List<string>();
         var activity = new EditorActivity(_time, by => { order.Add("wait"); _time.Advance(by); });
         _store.OnSave = () => order.Add("write");
@@ -236,13 +236,36 @@ public class RebuildJobTests
     }
 
     [Fact]
-    public async Task Rebuild_writes_one_transaction_per_page_and_one_for_the_orphans()
+    public async Task Rebuild_reads_pages_of_200_and_writes_one_transaction_per_1000_documents()
     {
-        AddDocuments(450);
+        AddDocuments(2300);
 
         await Run();
 
-        Assert.Equal(3, _store.SaveManyCalls); // pages of 200, 200 and 50; nothing to remove
+        Assert.Equal(12, _source.GetPageCalls); // 11 pages of 200 and one of 100
+        Assert.Equal(3, _store.SaveManyCalls); // 1000, 1000 and 300 documents; nothing to remove
+        Assert.Equal(2300, _store.Count());
+    }
+
+    [Fact]
+    public async Task A_document_saved_while_its_chunk_waits_for_the_write_is_not_overwritten_with_the_older_snapshot()
+    {
+        var keys = AddDocuments(450);
+        // The editor's save is indexed after the page was read but before the chunk is written.
+        _source.OnGetPage = page =>
+        {
+            if (page == 1)
+            {
+                _source.Remove(keys[0]);
+                _source.Add(Doc(keys[0], 1, en: "changed"));
+                _reindexer.Reindex(keys[0], IndexMode.Save);
+            }
+        };
+
+        await Run();
+
+        var stored = _store.GetVariants(keys[0]).Single(v => v.Culture == En);
+        Assert.Equal(Doc(keys[0], 1, en: "changed").Cultures.Single(c => c.Culture == En).Fingerprint, stored.TextFingerprint);
     }
 
     [Fact]

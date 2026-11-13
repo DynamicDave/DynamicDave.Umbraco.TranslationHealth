@@ -28,6 +28,9 @@ public sealed class RebuildJob(
 {
     public const int PageSize = 200;
 
+    /// <summary>Documents per write transaction. Pages are read at <see cref="PageSize"/>, written in larger chunks: every commit can make a save of an editor on SQLite hang.</summary>
+    public const int WriteChunkSize = 1000;
+
     /// <summary>Fingerprint of the configured excluded document types: changes when the list changes, not with its order or casing.</summary>
     public static string ExcludedTypesHash(IEnumerable<string> aliases)
     {
@@ -53,15 +56,24 @@ public sealed class RebuildJob(
 
         using var tracking = reindexer.BeginTracking();
         var seen = new HashSet<Guid>();
+        var pending = new List<DocumentSnapshot>();
         for (long page = 0; ; page++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var documents = snapshots.GetPage(page, PageSize, out var total);
             seen.UnionWith(documents.Select(document => document.Key));
-            activity?.WaitUntilQuiet(cancellationToken);
-            reindexer.IndexPage(documents, mode);
+            pending.AddRange(documents);
+            var last = documents.Count < PageSize || (page + 1) * PageSize >= total;
+            if (pending.Count >= WriteChunkSize || last)
+            {
+                // A snapshot that is older by a few pages is fine: documents handled since BeginTracking are skipped.
+                activity?.WaitUntilQuiet(cancellationToken);
+                reindexer.IndexPage(pending, mode);
+                pending = [];
+            }
+
             progress.Report(seen.Count, (int)Math.Max(total, seen.Count), JobPhases.Indexing);
-            if (documents.Count < PageSize || (page + 1) * PageSize >= total)
+            if (last)
             {
                 break;
             }
