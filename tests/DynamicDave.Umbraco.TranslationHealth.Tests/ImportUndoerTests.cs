@@ -116,11 +116,12 @@ public class ImportUndoerTests
         var key = await Apply(false, Row(2, "A", ("nl-NL", "1")), Row(3, "B", ("nl-NL", "2")));
         var failing = new FailingDictionarySource(_dictionary, failSet: 2);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => Undoer(failing).UndoAsync(key, Guid.NewGuid(), "Dave"));
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() => Undoer(failing).UndoAsync(key, Guid.NewGuid(), "Dave"));
+        Assert.IsNotType<ImportAlreadyUndoneException>(failure);
 
         Assert.Equal(ImportState.Undone, _history.Get(key)!.State);
         Assert.Contains(_logger.Entries, e => e.Level == Microsoft.Extensions.Logging.LogLevel.Error && e.Message.Contains("restoring 1 values"));
-        await Assert.ThrowsAsync<InvalidOperationException>(() => Undoer().UndoAsync(key, Guid.NewGuid(), "Dave"));
+        await Assert.ThrowsAsync<ImportAlreadyUndoneException>(() => Undoer().UndoAsync(key, Guid.NewGuid(), "Dave"));
     }
 
     [Fact]
@@ -183,7 +184,7 @@ public class ImportUndoerTests
         var key = await Apply(false, Row(2, "A", ("nl-NL", "Nieuw")));
         await Undoer().UndoAsync(key, Guid.NewGuid(), "Dave");
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => Undoer().UndoAsync(key, Guid.NewGuid(), "Dave"));
-        await Assert.ThrowsAsync<InvalidOperationException>(() => Undoer().UndoAsync(Guid.NewGuid(), Guid.NewGuid(), "Dave"));
+        await Assert.ThrowsAsync<ImportAlreadyUndoneException>(() => Undoer().UndoAsync(key, Guid.NewGuid(), "Dave"));
+        await Assert.ThrowsAsync<ImportAlreadyUndoneException>(() => Undoer().UndoAsync(Guid.NewGuid(), Guid.NewGuid(), "Dave"));
     }
 }

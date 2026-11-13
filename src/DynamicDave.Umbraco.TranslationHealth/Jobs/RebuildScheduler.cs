@@ -80,6 +80,25 @@ public sealed class RebuildScheduler(
         }
     }
 
+    /// <summary>Starts a rebuild only when no job runs; nothing is remembered otherwise (null). For an explicit request that wants an answer now.</summary>
+    public JobState? TryStartNow(IndexMode mode, Guid userKey = default, string userName = SystemUserName)
+    {
+        if (mode == IndexMode.Save)
+        {
+            throw new ArgumentException("A rebuild runs in a rebuild mode.", nameof(mode));
+        }
+
+        lock (_gate)
+        {
+            return runner.TryStart(
+                JobKind.Rebuild,
+                userKey,
+                userName,
+                (services, progress, cancellationToken) =>
+                    services.GetRequiredService<RebuildJob>().RunAsync(mode, progress, cancellationToken));
+        }
+    }
+
     /// <summary>
     /// Starts the remembered rebuild when no job is running any more (here or on another server). A configuration change
     /// is turned into a rebuild at the moment it starts, with the default language compared then: a changed default

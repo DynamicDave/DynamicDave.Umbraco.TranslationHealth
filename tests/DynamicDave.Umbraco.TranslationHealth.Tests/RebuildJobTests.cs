@@ -383,6 +383,23 @@ public class RebuildJobTests
         }
 
         [Fact]
+        public async Task Try_start_now_starts_when_idle_and_remembers_nothing_when_busy()
+        {
+            var (entered, release) = BlockFirstRun();
+            Assert.NotNull(_scheduler.TryStartNow(IndexMode.Rebuild));
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(10)));
+
+            Assert.Null(_scheduler.TryStartNow(IndexMode.RebuildClearBaselines));
+            Assert.Null(_scheduler.PendingMode);
+            Assert.False(_scheduler.HasPending);
+
+            release.Set();
+            await _runner.LastRun!;
+            Assert.Null(_scheduler.StartPending());
+            Assert.Equal(1, _source.GetPageCalls);
+        }
+
+        [Fact]
         public async Task The_first_rebuild_keeps_baselines_when_nothing_stronger_was_asked()
         {
             Assert.NotNull(_scheduler.Request(IndexMode.Rebuild));

@@ -83,7 +83,7 @@ public class TranslationHealthController(
         var startNodes = StartNodes(user);
         var all = sites.GetSites();
         IReadOnlyList<SiteInfo> visible = all;
-        if (startNodes is not null && !startNodes.Contains(-1))
+        if (all.Count > 0 && startNodes is not null && !startNodes.Contains(-1))
         {
             var rootPaths = entityService.GetAll(UmbracoObjectTypes.Document, all.Select(s => s.RootId).ToArray()).ToDictionary(e => e.Id, e => e.Path);
             var startPaths = startNodes.Count == 0 ? [] : entityService.GetAll(UmbracoObjectTypes.Document, startNodes.ToArray()).Select(e => e.Path).ToList();
@@ -192,7 +192,7 @@ public class TranslationHealthController(
         // The scheduler would remember a rebuild asked for during a job and run it later; an editor who clicks Rebuild wants an answer now.
         if (jobs.Current() is { Status: JobStatus.Running } running) return Conflict(ApiMapping.ToModel(running));
 
-        var started = scheduler.Request(IndexMode.Rebuild, user.Key, UserName(user));
+        var started = scheduler.TryStartNow(IndexMode.Rebuild, user.Key, UserName(user));
         if (started is not null) return Ok(ApiMapping.ToModel(started));
 
         return jobs.Current() is { } current ? Conflict(ApiMapping.ToModel(current)) : Conflict();

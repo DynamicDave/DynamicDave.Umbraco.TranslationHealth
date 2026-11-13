@@ -15,7 +15,7 @@ public sealed class ImportUndoer(IDictionarySource dictionary, IImportHistory hi
         // midway, the import stays marked undone and the remaining rows are not retried.
         if (!history.MarkUndone(importKey, ImportApplier.Truncate(userName), time.GetUtcNow().UtcDateTime))
         {
-            throw new InvalidOperationException("The import is unknown or has already been undone.");
+            throw new ImportAlreadyUndoneException();
         }
 
         var progress = new Progress();

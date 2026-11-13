@@ -188,6 +188,9 @@ public class DictionaryTranslationsController(
         if (LoadPlan(planId, user) is not { } plan) return NotFoundError(ApiErrors.PlanExpired);
 
         var editable = AccessPolicy.EditableCultures(user.Groups, await languageService.GetAllAsync());
+        // Nothing selected: refuse before the plan is claimed, so it can still be used.
+        if (request.SelectedItemIds is not { Length: > 0 }) return Error(ApiErrors.InvalidSelection);
+
         var (valid, selected) = ApiMapping.Select(plan, request.SelectedItemIds, editable);
         if (!valid) return Error(ApiErrors.InvalidSelection);
 
@@ -267,7 +270,7 @@ public class DictionaryTranslationsController(
         {
             return Ok(ApiMapping.ToModel(await undoer.UndoAsync(key, user.Key, UserName(user))));
         }
-        catch (InvalidOperationException) when (history.Get(key) is { State: ImportState.Undone })
+        catch (ImportAlreadyUndoneException)
         {
             // Another request undid it between the check above and the claim.
             return ConflictError(ApiErrors.AlreadyUndone);
