@@ -18,7 +18,8 @@ public static class BlockValueReader
     public static IReadOnlyList<(string Path, string Value)> CultureValues(string? json, string culture, bool includeInvariant = false)
     {
         var result = new List<(string Path, string Value)>();
-        if (string.IsNullOrWhiteSpace(json))
+        // Cheap check first: parsing plain text would throw, which is slow on the indexing hot path.
+        if (string.IsNullOrWhiteSpace(json) || !json.AsSpan().TrimStart().StartsWith("{"))
         {
             return result;
         }

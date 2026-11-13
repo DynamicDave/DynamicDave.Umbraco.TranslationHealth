@@ -121,8 +121,24 @@ public sealed class UmbracoContentSnapshotSource(
     IDocumentNavigationQueryService navigation,
     ICoreScopeProvider scopeProvider,
     ISiteSource sites,
-    IOptionsMonitor<TranslationHealthOptions> options) : IContentSnapshotSource
+    IOptionsMonitor<TranslationHealthOptions> options,
+    TimeProvider timeProvider) : IContentSnapshotSource
 {
+    private static readonly Func<IContent, string, bool> IsCulturePublished =
+        InterfaceMethod.BindOpen<Func<IContent, string, bool>>(typeof(IContent), "IsCulturePublished");
+
+    private static readonly Func<IContent, string, DateTime?> GetPublishDate =
+        InterfaceMethod.BindOpen<Func<IContent, string, DateTime?>>(typeof(IContent), "GetPublishDate");
+
+    private static readonly Func<IContent, string, string?> GetPublishName =
+        InterfaceMethod.BindOpen<Func<IContent, string, string?>>(typeof(IContent), "GetPublishName");
+
+    private static readonly TimeSpan TypeIdsCacheDuration = TimeSpan.FromSeconds(60);
+
+    private readonly object _typeIdsLock = new();
+    private int[] _typeIds = [];
+    private DateTimeOffset _typeIdsLoadedAt = DateTimeOffset.MinValue;
+
     public DocumentSnapshot? Get(Guid key)
     {
         var content = contentService.GetById(key);
@@ -136,10 +152,7 @@ public sealed class UmbracoContentSnapshotSource(
 
     public IReadOnlyList<DocumentSnapshot> GetPage(long pageIndex, int pageSize, out long total)
     {
-        var typeIds = contentTypeService.GetAll()
-            .Where(type => IsIncluded(type.Variations, type.Alias))
-            .Select(type => type.Id)
-            .ToArray();
+        var typeIds = IncludedTypeIds();
         if (typeIds.Length == 0)
         {
             total = 0;
@@ -151,6 +164,25 @@ public sealed class UmbracoContentSnapshotSource(
         return Build(page);
     }
 
+    // Culture-variant, non-excluded document types; GetAll clones every type, so it is cached for a minute.
+    private int[] IncludedTypeIds()
+    {
+        lock (_typeIdsLock)
+        {
+            var now = timeProvider.GetUtcNow();
+            if (now - _typeIdsLoadedAt >= TypeIdsCacheDuration)
+            {
+                _typeIds = contentTypeService.GetAll()
+                    .Where(type => IsIncluded(type.Variations, type.Alias))
+                    .Select(type => type.Id)
+                    .ToArray();
+                _typeIdsLoadedAt = now;
+            }
+
+            return _typeIds;
+        }
+    }
+
     public IReadOnlyList<Guid> DescendantKeys(Guid key)
         => navigation.TryGetDescendantsKeys(key, out var keys) ? keys.ToList() : [];
 
@@ -160,6 +192,7 @@ public sealed class UmbracoContentSnapshotSource(
 
     private List<DocumentSnapshot> Build(IReadOnlyList<IContent> documents)
     {
+        // The ancestor id list is bounded by the page size (at most 100 documents times their depth).
         // One light query for the ancestors of the whole page: their keys and sort orders.
         var ancestorIds = documents
             .SelectMany(d => PathIds(d.Path).Where(id => id != d.Id))
@@ -199,18 +232,15 @@ public sealed class UmbracoContentSnapshotSource(
             return new CultureSnapshot(culture, VariantBaseState.NotCreated, null, null, null, null);
         }
 
-        // Moved to IPublishableContentBase in Umbraco 18: bound by name so the same IL runs on 17 and 18.
-        var isPublished = InterfaceMethod.Bind<Func<string, bool>>(content, typeof(IContent), "IsCulturePublished");
-        var getPublishDate = InterfaceMethod.Bind<Func<string, DateTime?>>(content, typeof(IContent), "GetPublishDate");
+        // IsCulturePublished, GetPublishDate and GetPublishName moved to IPublishableContentBase in Umbraco 18: see the bound delegates.
 
         var name = content.GetCultureName(culture);
         var fingerprint = VariantFingerprint.Compute(name, Texts(content, culture, published: false));
 
         var state = VariantBaseState.Draft;
-        if (isPublished(culture))
+        if (IsCulturePublished(content, culture))
         {
-            var getPublishName = InterfaceMethod.Bind<Func<string, string?>>(content, typeof(IContent), "GetPublishName");
-            var publishedFingerprint = VariantFingerprint.Compute(getPublishName(culture), Texts(content, culture, published: true));
+            var publishedFingerprint = VariantFingerprint.Compute(GetPublishName(content, culture), Texts(content, culture, published: true));
             state = publishedFingerprint == fingerprint ? VariantBaseState.Published : VariantBaseState.PublishedPendingChanges;
         }
 
@@ -218,7 +248,7 @@ public sealed class UmbracoContentSnapshotSource(
             culture,
             state,
             ToUtc(content.GetUpdateDate(culture)),
-            ToUtc(getPublishDate(culture)),
+            ToUtc(GetPublishDate(content, culture)),
             name,
             fingerprint);
     }

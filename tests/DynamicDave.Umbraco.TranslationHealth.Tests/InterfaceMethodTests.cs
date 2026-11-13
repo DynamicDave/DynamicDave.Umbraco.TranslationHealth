@@ -66,6 +66,19 @@ public class InterfaceMethodTests
         => Assert.Throws<MissingMethodException>(() => InterfaceMethod.Bind<Func<Guid, string, bool>>(new Implementation(true), typeof(IDerived), "M"));
 
     [Fact]
+    public void BindOpen_creates_a_reusable_delegate_for_a_base_interface_method()
+    {
+        var bound = InterfaceMethod.BindOpen<Func<IDerived, Guid, string, bool>>(typeof(IDerived), "Two");
+
+        Assert.True(bound(new Implementation(true), Guid.NewGuid(), "nl"));
+        Assert.False(bound(new Implementation(false), Guid.NewGuid(), "nl"));
+    }
+
+    [Fact]
+    public void BindOpen_throws_for_an_unknown_name()
+        => Assert.Throws<MissingMethodException>(() => InterfaceMethod.BindOpen<Func<IDerived, Guid, bool>>(typeof(IDerived), "Nope"));
+
+    [Fact]
     public void Throws_for_an_unknown_name()
         => Assert.Throws<MissingMethodException>(() => InterfaceMethod.Bind<Func<Guid, bool>>(new Implementation(true), typeof(IDerived), "Nope"));
 }
