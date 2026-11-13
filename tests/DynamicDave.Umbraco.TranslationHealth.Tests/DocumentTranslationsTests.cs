@@ -90,6 +90,41 @@ public class DocumentTranslationsTests
         Assert.Null(result.Single(t => t.Culture == "de-DE").MarkedByName);
     }
 
+    [Fact]
+    public void Row_culture_casing_may_differ_from_the_language()
+    {
+        var key = Guid.NewGuid();
+        Seed(key, Row(key, "nl-nl", CellStatus.Published), Row(key, "EN-us", CellStatus.Draft));
+
+        var result = _translations.Get(key)!;
+
+        Assert.True(result[0].IsDefault);
+        Assert.Equal("Dutch", result[0].LanguageName);
+        Assert.Equal("English", result[1].LanguageName);
+    }
+
+    [Fact]
+    public void Unknown_culture_is_listed_last_with_its_code_as_name()
+    {
+        var key = Guid.NewGuid();
+        Seed(key, Row(key, "fr-FR", CellStatus.Draft), Row(key, "de-DE", CellStatus.Missing), Row(key, "nl-NL", CellStatus.Published));
+
+        var result = _translations.Get(key)!;
+
+        Assert.Equal(["nl-NL", "de-DE", "fr-FR"], result.Select(t => t.Culture));
+        Assert.Equal("fr-FR", result[2].LanguageName);
+    }
+
+    [Fact]
+    public void Default_language_is_first_even_when_it_is_last_in_core_order()
+    {
+        _sites.Default = "de-DE";
+        var key = Guid.NewGuid();
+        Seed(key, Row(key, "en-US", CellStatus.Published), Row(key, "nl-NL", CellStatus.Published), Row(key, "de-DE", CellStatus.Published));
+
+        Assert.Equal(["de-DE", "en-US", "nl-NL"], _translations.Get(key)!.Select(t => t.Culture));
+    }
+
     /// <summary>The Umbraco services the class reads, as proxies that answer only the calls it makes (the interfaces are large and differ per version).</summary>
     private sealed class Services
     {
