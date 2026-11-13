@@ -1,3 +1,4 @@
+using DynamicDave.Umbraco.TranslationHealth.Sites;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Umbraco.Cms.Core.Composing;
@@ -10,5 +11,6 @@ public class TranslationHealthComposer : IComposer
     public void Compose(IUmbracoBuilder builder)
     {
         builder.Services.AddOptions<TranslationHealthOptions>().Bind(builder.Config.GetSection(Constants.OptionsSection));
+        builder.Services.AddSingleton<ISiteSource, UmbracoSiteSource>();
     }
 }
