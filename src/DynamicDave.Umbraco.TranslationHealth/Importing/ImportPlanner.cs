@@ -1,0 +1,163 @@
+using DynamicDave.Umbraco.TranslationHealth.Dictionary;
+using DynamicDave.Umbraco.TranslationHealth.Files;
+
+namespace DynamicDave.Umbraco.TranslationHealth.Importing;
+
+/// <summary>Turns a parsed import file into a test-run plan without touching any data.</summary>
+public static class ImportPlanner
+{
+    private const string IdPrefix = "id:";
+
+    /// <param name="installedCultures">All installed cultures; when null every culture counts as installed.</param>
+    public static ImportPlan Plan(
+        Guid id,
+        string fileName,
+        ImportFile file,
+        IReadOnlyList<DictionaryEntry> current,
+        string defaultCulture,
+        IReadOnlySet<string> editableCultures,
+        ImportOptions options,
+        IReadOnlySet<string>? installedCultures = null)
+    {
+        var byKey = new Dictionary<string, DictionaryEntry>(StringComparer.OrdinalIgnoreCase);
+        var byId = new Dictionary<Guid, DictionaryEntry>();
+        foreach (var entry in current)
+        {
+            byKey.TryAdd(entry.Key.Trim(), entry);
+            byId.TryAdd(entry.Id, entry);
+        }
+
+        var installed = installedCultures?.ToDictionary(c => c, c => c, StringComparer.OrdinalIgnoreCase);
+        var editable = new HashSet<string>(editableCultures, StringComparer.OrdinalIgnoreCase);
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var items = new List<PlanItem>();
+
+        void Add(ImportRow row, string key, string culture, ImportOutcome outcome, ImportErrorReason reason,
+            string? currentValue, string newValue, string? fileSource, string? currentSource)
+        {
+            var sourceChanged = file.Format == ImportFileFormat.Xliff
+                && fileSource is not null
+                && !string.Equals(NormalizeLineEndings(fileSource), NormalizeLineEndings(currentSource ?? string.Empty), StringComparison.Ordinal);
+            var selected = outcome is ImportOutcome.NewValue or ImportOutcome.Overwrite or ImportOutcome.NewKey && !sourceChanged;
+            items.Add(new PlanItem(items.Count + 1, row.RowNumber, key, culture, outcome, reason, currentValue, newValue,
+                fileSource, currentSource, sourceChanged, selected));
+        }
+
+        string CultureName(string culture) => installed is not null && installed.TryGetValue(culture, out var name) ? name : culture;
+
+        foreach (var row in file.Rows)
+        {
+            var values = row.Values.Where(v => !string.IsNullOrWhiteSpace(v.Value)).ToList();
+            if (values.Count == 0)
+            {
+                continue;
+            }
+
+            var rowKey = row.Key.Trim();
+            var fileSource = FindSource(row, defaultCulture);
+
+            if (rowKey.Length == 0)
+            {
+                foreach (var (culture, value) in values)
+                {
+                    Add(row, rowKey, CultureName(culture), ImportOutcome.Error, ImportErrorReason.EmptyKey, null, value, fileSource, null);
+                }
+
+                continue;
+            }
+
+            var entry = Resolve(rowKey, byKey, byId);
+            var identity = entry is not null ? "e:" + entry.Id : "k:" + rowKey;
+            var duplicate = !seen.Add(identity);
+            var key = entry?.Key ?? rowKey;
+            var currentSource = entry is not null ? NonEmpty(entry.Values, defaultCulture) : null;
+
+            foreach (var (culture, value) in values)
+            {
+                var name = CultureName(culture);
+
+                if (duplicate)
+                {
+                    Add(row, key, name, ImportOutcome.Error, ImportErrorReason.DuplicateKey, null, value, fileSource, currentSource);
+                    continue;
+                }
+
+                if (installed is not null && !installed.ContainsKey(culture))
+                {
+                    Add(row, key, name, ImportOutcome.Error, ImportErrorReason.UnknownLanguage, null, value, fileSource, currentSource);
+                    continue;
+                }
+
+                if (!editable.Contains(culture))
+                {
+                    Add(row, key, name, ImportOutcome.Error, ImportErrorReason.LanguageNotAllowed, null, value, fileSource, currentSource);
+                    continue;
+                }
+
+                if (entry is null)
+                {
+                    var outcome = options.CreateKeys && !rowKey.StartsWith(IdPrefix, StringComparison.OrdinalIgnoreCase)
+                        ? ImportOutcome.NewKey
+                        : ImportOutcome.SkippedUnknownKey;
+                    Add(row, key, name, outcome, ImportErrorReason.None, null, value, fileSource, null);
+                    continue;
+                }
+
+                var currentValue = NonEmpty(entry.Values, culture);
+                var result = currentValue is null ? ImportOutcome.NewValue
+                    : NormalizeLineEndings(currentValue) == NormalizeLineEndings(value) ? ImportOutcome.Unchanged
+                    : options.Overwrite ? ImportOutcome.Overwrite
+                    : ImportOutcome.SkippedHasValue;
+                Add(row, key, name, result, ImportErrorReason.None, currentValue, value, fileSource, currentSource);
+            }
+        }
+
+        return new ImportPlan(id, fileName, file.Format, options, file.UnknownColumns, items);
+    }
+
+    private static DictionaryEntry? Resolve(string key, Dictionary<string, DictionaryEntry> byKey, Dictionary<Guid, DictionaryEntry> byId)
+    {
+        if (key.StartsWith(IdPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return Guid.TryParse(key[IdPrefix.Length..].Trim(), out var entryId) && byId.TryGetValue(entryId, out var byIdMatch)
+                ? byIdMatch
+                : null;
+        }
+
+        return byKey.GetValueOrDefault(key);
+    }
+
+    private static string? FindSource(ImportRow row, string culture)
+    {
+        if (row.Sources is null)
+        {
+            return null;
+        }
+
+        foreach (var (name, value) in row.Sources)
+        {
+            if (string.Equals(name, culture, StringComparison.OrdinalIgnoreCase))
+            {
+                return value;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? NonEmpty(IReadOnlyDictionary<string, string> values, string culture)
+    {
+        foreach (var (name, value) in values)
+        {
+            if (string.Equals(name, culture, StringComparison.OrdinalIgnoreCase))
+            {
+                return string.IsNullOrWhiteSpace(value) ? null : value;
+            }
+        }
+
+        return null;
+    }
+
+    private static string NormalizeLineEndings(string value) => value.Replace("\r\n", "\n").Replace('\r', '\n');
+}
