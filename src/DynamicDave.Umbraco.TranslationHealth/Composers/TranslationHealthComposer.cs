@@ -1,4 +1,5 @@
 using DynamicDave.Umbraco.TranslationHealth.Content;
+using DynamicDave.Umbraco.TranslationHealth.Persistence;
 using DynamicDave.Umbraco.TranslationHealth.Sites;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,6 +15,12 @@ public class TranslationHealthComposer : IComposer
     {
         builder.Services.AddOptions<TranslationHealthOptions>().Bind(builder.Config.GetSection(Constants.OptionsSection));
         builder.Services.TryAddSingleton(TimeProvider.System);
+
+        // The tables are created by TranslationHealthMigrationPlan, which Umbraco discovers by itself.
+        builder.Services.AddSingleton<ITranslationStatusStore, TranslationStatusStore>();
+        builder.Services.AddSingleton<IImportHistory, ImportHistory>();
+        builder.Services.AddSingleton<TempStore>();
+
         builder.Services.AddSingleton<ISiteSource, UmbracoSiteSource>();
         builder.Services.AddSingleton<IContentSnapshotSource, UmbracoContentSnapshotSource>();
     }
