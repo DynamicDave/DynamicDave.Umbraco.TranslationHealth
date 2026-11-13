@@ -62,7 +62,7 @@ public static class StatusIndexer
             rows.Add(row);
         }
 
-        var name = defaultSnapshot?.Name
+        var name = (string.IsNullOrEmpty(defaultSnapshot?.Name) ? null : defaultSnapshot.Name)
             ?? doc.Cultures.Select(c => c.Name).FirstOrDefault(n => !string.IsNullOrEmpty(n))
             ?? string.Empty;
 
@@ -96,7 +96,8 @@ public static class StatusIndexer
             return prev is null ? row : KeepBaseline(row, prev);
         }
 
-        var created = prev is null || prev.Status is CellStatus.Missing or CellStatus.NotApplicable;
+        // A row that was NotApplicable has no text history, so it falls through to date mode.
+        var created = prev is null || prev.Status == CellStatus.Missing;
         var textChanged = prev?.TextFingerprint is not null && prev.TextFingerprint != row.TextFingerprint;
 
         if ((created && documentHadRows) || textChanged)

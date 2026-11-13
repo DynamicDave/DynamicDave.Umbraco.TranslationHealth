@@ -233,4 +233,61 @@ public class StatusIndexerTests
         var r = Run(Doc(C(En, VariantBaseState.NotCreated, null), C(Nl, VariantBaseState.Published, "b")), prev);
         Assert.False(Nld(r).Outdated);
     }
+    [Fact]
+    public void Culture_applicable_again_without_history_uses_date_mode()
+    {
+        var prev = new[]
+        {
+            Stored(C(En, VariantBaseState.Published, "a")),
+            Stored(C(Nl, VariantBaseState.Published, null)) with { Status = CellStatus.NotApplicable, UpdateDateUtc = null, Name = null },
+        };
+        var r = Run(Doc(C(En, VariantBaseState.Published, "a", 10), C(Nl, VariantBaseState.Published, "b", 1)), prev);
+        var v = Nld(r);
+        Assert.Null(v.BaselineFingerprint);
+        Assert.Equal(TrackingMode.Date, v.Mode);
+        Assert.True(v.Outdated);
+    }
+
+    [Fact]
+    public void Translation_text_change_clears_marks()
+    {
+        var prev = new[]
+        {
+            Stored(C(En, VariantBaseState.Published, "a")),
+            Stored(C(Nl, VariantBaseState.Published, "b"), "a", BaselineSource.MarkedUpToDate) with { MarkedByUserKey = Guid.NewGuid(), MarkedUtc = T0 },
+        };
+        var v = Nld(Run(Doc(C(En, VariantBaseState.Published, "a"), C(Nl, VariantBaseState.Published, "b2")), prev));
+        Assert.Equal(BaselineSource.Saved, v.BaselineSource);
+        Assert.Null(v.MarkedByUserKey);
+        Assert.Null(v.MarkedUtc);
+    }
+
+    [Fact]
+    public void Culture_absent_from_previous_rows_records_baseline()
+    {
+        var prev = new[] { Stored(C(En, VariantBaseState.Published, "a")) };
+        var v = Nld(Run(Doc(C(En, VariantBaseState.Published, "a"), C(Nl, VariantBaseState.Draft, "b")), prev));
+        Assert.Equal("a", v.BaselineFingerprint);
+        Assert.Equal(BaselineSource.Saved, v.BaselineSource);
+    }
+
+    [Fact]
+    public void Default_culture_outside_site_still_drives_outdated()
+    {
+        var prev = new[]
+        {
+            Stored(C(En, VariantBaseState.Published, "a")),
+            Stored(C(Nl, VariantBaseState.Published, "b"), "a", BaselineSource.Saved),
+        };
+        var r = Run(Doc(C(En, VariantBaseState.Published, "a2"), C(Nl, VariantBaseState.Published, "b")), prev, siteCultures: [Nl]);
+        Assert.Equal(CellStatus.NotApplicable, r.Variants.Single(v => v.Culture == En).Status);
+        Assert.True(Nld(r).Outdated);
+    }
+
+    [Fact]
+    public void Empty_default_name_falls_back_to_another_culture()
+    {
+        var doc = Doc(C(En, VariantBaseState.Published, "a") with { Name = "" }, C(Nl, VariantBaseState.Published, "b") with { Name = "Pagina" });
+        Assert.Equal("Pagina", Run(doc).Document.Name);
+    }
 }
