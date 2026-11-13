@@ -1,5 +1,7 @@
+using System.Text.Json.Serialization;
 namespace DynamicDave.Umbraco.TranslationHealth.Status;
 
+[JsonConverter(typeof(JsonStringEnumConverter<CellStatus>))]
 public enum CellStatus
 {
     NotApplicable,
@@ -9,12 +11,14 @@ public enum CellStatus
     PendingChanges,
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter<TrackingMode>))]
 public enum TrackingMode
 {
     Date,
     Fingerprint,
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter<BaselineSource>))]
 public enum BaselineSource
 {
     Saved,

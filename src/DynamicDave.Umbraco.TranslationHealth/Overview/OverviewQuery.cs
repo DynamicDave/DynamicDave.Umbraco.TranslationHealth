@@ -46,6 +46,15 @@ public class OverviewQuery(IScopeProvider scopeProvider)
         return OverviewSql.Aggregate(dbScope.Database.Fetch<TotalsRow>(sql));
     }
 
+    /// <summary>The document type aliases of the indexed documents the user may see, sorted.</summary>
+    public IReadOnlyList<string> DocumentTypeAliases(StartNodeScope scope)
+    {
+        using var dbScope = scopeProvider.CreateScope(autoComplete: true);
+        var (where, args) = OverviewSql.BuildWhere(new OverviewFilter(null, null, null, null, null, false), scope);
+        return dbScope.Database.Fetch<string>(dbScope.SqlContext.Sql(
+            $"SELECT DISTINCT d.contentTypeAlias FROM {DocumentDto.TableName} d WHERE {where} ORDER BY d.contentTypeAlias", args));
+    }
+
     /// <summary>Streams the filtered documents in tree order, one page of <see cref="ExportPageSize"/> at a time.</summary>
     public IEnumerable<OverviewRow> ExportRows(OverviewFilter filter, StartNodeScope scope, int max = 50_000)
     {

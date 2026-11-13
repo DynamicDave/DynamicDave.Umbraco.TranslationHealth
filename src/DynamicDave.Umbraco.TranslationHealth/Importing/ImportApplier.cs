@@ -1,9 +1,11 @@
+using System.Text.Json.Serialization;
 using DynamicDave.Umbraco.TranslationHealth.Dictionary;
 using DynamicDave.Umbraco.TranslationHealth.Persistence;
 using Microsoft.Extensions.Logging;
 
 namespace DynamicDave.Umbraco.TranslationHealth.Importing;
 
+[JsonConverter(typeof(JsonStringEnumConverter<ApplyOutcome>))]
 public enum ApplyOutcome { Applied, Changed, Skipped }
 
 public sealed record AppliedItem(int ItemId, ApplyOutcome Outcome);

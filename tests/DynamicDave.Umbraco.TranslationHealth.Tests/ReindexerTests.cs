@@ -156,6 +156,30 @@ public class ReindexerTests
     }
 
     [Fact]
+    public void Mark_up_to_date_can_require_that_the_language_is_outdated()
+    {
+        var key = Guid.NewGuid();
+        AddDocument(key, 1, "a", "b");
+        _reindexer.Reindex(key, IndexMode.Save);
+
+        // Not outdated: refused, and the row is left alone.
+        Assert.Throws<InvalidOperationException>(() => _reindexer.MarkUpToDate(key, Nl, Guid.NewGuid(), requireOutdated: true));
+        Assert.Null(_store.GetVariants(key).Single(v => v.Culture == Nl).MarkedByUserKey);
+
+        _source.Replace(FakeSnapshotSource.Doc(key, 1, C(En, VariantBaseState.Published, "a"), C(Nl, VariantBaseState.Published, "b2")));
+        _reindexer.Reindex(key, IndexMode.Save);
+        _source.Replace(FakeSnapshotSource.Doc(key, 1, C(En, VariantBaseState.Published, "a2"), C(Nl, VariantBaseState.Published, "b2")));
+        _reindexer.Reindex(key, IndexMode.Save);
+        Assert.True(_store.GetVariants(key).Single(v => v.Culture == Nl).Outdated);
+
+        var user = Guid.NewGuid();
+        var marked = _reindexer.MarkUpToDate(key, Nl, user, requireOutdated: true);
+
+        Assert.False(marked.Outdated);
+        Assert.Equal(user, marked.MarkedByUserKey);
+    }
+
+    [Fact]
     public void Writes_of_one_reindexer_do_not_interleave()
     {
         var key = Guid.NewGuid();

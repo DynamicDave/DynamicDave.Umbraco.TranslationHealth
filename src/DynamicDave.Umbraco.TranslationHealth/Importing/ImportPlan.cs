@@ -1,9 +1,12 @@
+using System.Text.Json.Serialization;
 using DynamicDave.Umbraco.TranslationHealth.Files;
 
 namespace DynamicDave.Umbraco.TranslationHealth.Importing;
 
+[JsonConverter(typeof(JsonStringEnumConverter<ImportOutcome>))]
 public enum ImportOutcome { NewValue, Overwrite, Unchanged, NewKey, SkippedHasValue, SkippedUnknownKey, Error }
 
+[JsonConverter(typeof(JsonStringEnumConverter<ImportErrorReason>))]
 public enum ImportErrorReason { None, LanguageNotAllowed, UnknownLanguage, DuplicateKey, EmptyKey }
 
 public sealed record ImportOptions(bool Overwrite, bool CreateKeys);

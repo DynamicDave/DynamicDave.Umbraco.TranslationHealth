@@ -1,9 +1,12 @@
 using System.Text;
+using System.Text.Json.Serialization;
 
 namespace DynamicDave.Umbraco.TranslationHealth.Files;
 
+[JsonConverter(typeof(JsonStringEnumConverter<ImportFileFormat>))]
 public enum ImportFileFormat { Csv, Xliff }
 
+[JsonConverter(typeof(JsonStringEnumConverter<ImportFileError>))]
 public enum ImportFileError { Unreadable, MissingKeyColumn, TooLarge, TooManyRows, UnknownTargetLanguage }
 
 /// <summary>

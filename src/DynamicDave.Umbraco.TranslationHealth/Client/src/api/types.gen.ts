@@ -3,3 +3,876 @@
 export type ClientOptions = {
     baseUrl: 'https://localhost:44417' | (string & {});
 };
+
+export type AppliedItemModel = {
+    itemId: number;
+    outcome: ApplyOutcome;
+};
+
+export type ApplyOutcome = 'Applied' | 'Changed' | 'Skipped';
+
+export type ApplyRequest = {
+    selectedItemIds: Array<number>;
+};
+
+export type ApplyResponse = {
+    importKey?: string | null;
+    applied: number;
+    skipped: number;
+    items: Array<AppliedItemModel>;
+};
+
+export type BaselineSource = 'Saved' | 'MarkedUpToDate';
+
+export type CellFilter = 'Missing' | 'Draft' | 'PendingChanges' | 'Outdated' | 'AnyIssue';
+
+export type CellStatus = 'NotApplicable' | 'Missing' | 'Draft' | 'Published' | 'PendingChanges';
+
+export type DocumentTranslationModel = {
+    culture: string;
+    languageName: string;
+    isDefault: boolean;
+    status: CellStatus;
+    outdated: boolean;
+    mode: TrackingMode;
+    outdatedSinceUtc?: string | null;
+    updateDateUtc?: string | null;
+    publishDateUtc?: string | null;
+    name?: string | null;
+    baselineSource: BaselineSource;
+    markedUtc?: string | null;
+    markedByName?: string | null;
+    canMarkUpToDate: boolean;
+};
+
+export type DocumentTranslationsResponse = {
+    variesByCulture: boolean;
+    translations: Array<DocumentTranslationModel>;
+};
+
+export type DocumentTypeModel = {
+    alias: string;
+    name: string;
+};
+
+export type ErrorResponse = {
+    error: string;
+};
+
+export type ImportDetailResponse = {
+    import: ImportModel;
+    totalRows: number;
+    rows: Array<ImportRowModel>;
+};
+
+export type ImportErrorReason = 'None' | 'LanguageNotAllowed' | 'UnknownLanguage' | 'DuplicateKey' | 'EmptyKey';
+
+export type ImportFileFormat = 'Csv' | 'Xliff';
+
+export type ImportModel = {
+    key: string;
+    createdUtc: string;
+    userKey: string;
+    userName: string;
+    fileName: string;
+    format: string;
+    overwrite: boolean;
+    createKeys: boolean;
+    applied: number;
+    skipped: number;
+    state: ImportState;
+    undoneUtc?: string | null;
+    undoneBy?: string | null;
+};
+
+export type ImportOutcome = 'NewValue' | 'Overwrite' | 'Unchanged' | 'NewKey' | 'SkippedHasValue' | 'SkippedUnknownKey' | 'Error';
+
+export type ImportPlanResponse = {
+    planId: string;
+    fileName: string;
+    format: ImportFileFormat;
+    unknownColumns: Array<string>;
+    counts: Array<OutcomeCountModel>;
+    total: number;
+    items: Array<PlanItemModel>;
+};
+
+export type ImportRowModel = {
+    key: string;
+    culture: string;
+    oldValue?: string | null;
+    newValue: string;
+    keyCreated: boolean;
+};
+
+export type ImportState = 'Applied' | 'Undone';
+
+export type ImportsResponse = {
+    total: number;
+    items: Array<ImportModel>;
+};
+
+export type JobKind = 'Rebuild';
+
+export type JobStateModel = {
+    id: string;
+    kind: JobKind;
+    status: JobStatus;
+    userKey: string;
+    userName: string;
+    startedUtc: string;
+    heartbeatUtc: string;
+    completedUtc?: string | null;
+    done: number;
+    total: number;
+    phase: string;
+    error?: string | null;
+    summary?: string | null;
+    cancelRequested: boolean;
+};
+
+export type JobStatus = 'Running' | 'Completed' | 'Failed' | 'Aborted';
+
+export type LanguageModel = {
+    culture: string;
+    name: string;
+    isDefault: boolean;
+};
+
+export type LanguageTotalModel = {
+    culture: string;
+    pages: number;
+    complete: number;
+    missing: number;
+    draft: number;
+    pendingChanges: number;
+    outdated: number;
+};
+
+export type MissingCountModel = {
+    culture: string;
+    missing: number;
+};
+
+export type MissingItemModel = {
+    id: string;
+    key: string;
+    group: string;
+    missingCultures: Array<string>;
+};
+
+export type MissingResponse = {
+    counts: Array<MissingCountModel>;
+    total: number;
+    items: Array<MissingItemModel>;
+};
+
+export type OutcomeCountModel = {
+    outcome: ImportOutcome;
+    count: number;
+};
+
+export type OverviewResponse = {
+    total: number;
+    items: Array<OverviewRowModel>;
+};
+
+export type OverviewRowModel = {
+    key: string;
+    name: string;
+    parentKey?: string | null;
+    level: number;
+    contentTypeAlias: string;
+    siteRootKey: string;
+    cells: Array<VariantCellModel>;
+};
+
+export type PlanItemModel = {
+    id: number;
+    rowNumber: number;
+    key: string;
+    culture: string;
+    outcome: ImportOutcome;
+    reason: ImportErrorReason;
+    currentValue?: string | null;
+    newValue: string;
+    fileSource?: string | null;
+    currentSource?: string | null;
+    sourceChanged: boolean;
+    selectedByDefault: boolean;
+};
+
+export type PlanItemsResponse = {
+    total: number;
+    items: Array<PlanItemModel>;
+};
+
+export type SiteModel = {
+    rootKey: string;
+    name: string;
+    cultures: Array<string>;
+    missingDefaultCulture: boolean;
+};
+
+export type StatusModel = {
+    lastIndexError?: string | null;
+    lastIndexErrorUtc?: string | null;
+    lastRebuildUtc?: string | null;
+};
+
+export type TrackingMode = 'Date' | 'Fingerprint';
+
+export type UndoResponse = {
+    restored: number;
+    keysRemoved: number;
+    leftAlone: Array<ImportRowModel>;
+};
+
+export type VariantCellModel = {
+    culture: string;
+    status: CellStatus;
+    outdated: boolean;
+    mode: TrackingMode;
+    name?: string | null;
+    outdatedSinceUtc?: string | null;
+};
+
+export type ExportDictionaryData = {
+    body?: never;
+    path?: never;
+    query?: {
+        format?: ImportFileFormat;
+        culture?: string;
+        missingIn?: string;
+        group?: string;
+    };
+    url: '/umbraco/dynamicdave-translationhealth/api/v1/dictionary/export';
+};
+
+export type ExportDictionaryErrors = {
+    /**
+     * Bad Request
+     */
+    400: ErrorResponse;
+    /**
+     * The resource is protected and requires an authentication token
+     */
+    401: unknown;
+};
+
+export type ExportDictionaryError = ExportDictionaryErrors[keyof ExportDictionaryErrors];
+
+export type ExportDictionaryResponses = {
+    /**
+     * OK
+     */
+    200: Blob | File;
+};
+
+export type ExportDictionaryResponse = ExportDictionaryResponses[keyof ExportDictionaryResponses];
+
+export type GetDictionaryGroupsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/umbraco/dynamicdave-translationhealth/api/v1/dictionary/groups';
+};
+
+export type GetDictionaryGroupsErrors = {
+    /**
+     * The resource is protected and requires an authentication token
+     */
+    401: unknown;
+};
+
+export type GetDictionaryGroupsResponses = {
+    /**
+     * OK
+     */
+    200: Array<string>;
+};
+
+export type GetDictionaryGroupsResponse = GetDictionaryGroupsResponses[keyof GetDictionaryGroupsResponses];
+
+export type ApplyImportPlanData = {
+    body?: ApplyRequest;
+    path: {
+        planId: string;
+    };
+    query?: never;
+    url: '/umbraco/dynamicdave-translationhealth/api/v1/dictionary/import/{planId}/apply';
+};
+
+export type ApplyImportPlanErrors = {
+    /**
+     * Bad Request
+     */
+    400: ErrorResponse;
+    /**
+     * The resource is protected and requires an authentication token
+     */
+    401: unknown;
+    /**
+     * Not Found
+     */
+    404: ErrorResponse;
+    /**
+     * Internal Server Error
+     */
+    500: ErrorResponse;
+};
+
+export type ApplyImportPlanError = ApplyImportPlanErrors[keyof ApplyImportPlanErrors];
+
+export type ApplyImportPlanResponses = {
+    /**
+     * OK
+     */
+    200: ApplyResponse;
+};
+
+export type ApplyImportPlanResponse = ApplyImportPlanResponses[keyof ApplyImportPlanResponses];
+
+export type GetImportPlanItemsData = {
+    body?: never;
+    path: {
+        planId: string;
+    };
+    query?: {
+        outcome?: Array<ImportOutcome>;
+        skip?: number;
+        take?: number;
+    };
+    url: '/umbraco/dynamicdave-translationhealth/api/v1/dictionary/import/{planId}/items';
+};
+
+export type GetImportPlanItemsErrors = {
+    /**
+     * Bad Request
+     */
+    400: ErrorResponse;
+    /**
+     * The resource is protected and requires an authentication token
+     */
+    401: unknown;
+    /**
+     * Not Found
+     */
+    404: ErrorResponse;
+};
+
+export type GetImportPlanItemsError = GetImportPlanItemsErrors[keyof GetImportPlanItemsErrors];
+
+export type GetImportPlanItemsResponses = {
+    /**
+     * OK
+     */
+    200: PlanItemsResponse;
+};
+
+export type GetImportPlanItemsResponse = GetImportPlanItemsResponses[keyof GetImportPlanItemsResponses];
+
+export type CreateImportPlanData = {
+    body?: {
+        file?: Blob | File;
+    };
+    path?: never;
+    query?: {
+        overwrite?: boolean;
+        createKeys?: boolean;
+    };
+    url: '/umbraco/dynamicdave-translationhealth/api/v1/dictionary/import/plan';
+};
+
+export type CreateImportPlanErrors = {
+    /**
+     * Bad Request
+     */
+    400: ErrorResponse;
+    /**
+     * The resource is protected and requires an authentication token
+     */
+    401: unknown;
+};
+
+export type CreateImportPlanError = CreateImportPlanErrors[keyof CreateImportPlanErrors];
+
+export type CreateImportPlanResponses = {
+    /**
+     * OK
+     */
+    200: ImportPlanResponse;
+};
+
+export type CreateImportPlanResponse = CreateImportPlanResponses[keyof CreateImportPlanResponses];
+
+export type GetImportsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        skip?: number;
+        take?: number;
+    };
+    url: '/umbraco/dynamicdave-translationhealth/api/v1/dictionary/imports';
+};
+
+export type GetImportsErrors = {
+    /**
+     * Bad Request
+     */
+    400: ErrorResponse;
+    /**
+     * The resource is protected and requires an authentication token
+     */
+    401: unknown;
+};
+
+export type GetImportsError = GetImportsErrors[keyof GetImportsErrors];
+
+export type GetImportsResponses = {
+    /**
+     * OK
+     */
+    200: ImportsResponse;
+};
+
+export type GetImportsResponse = GetImportsResponses[keyof GetImportsResponses];
+
+export type GetImportData = {
+    body?: never;
+    path: {
+        key: string;
+    };
+    query?: {
+        skip?: number;
+        take?: number;
+    };
+    url: '/umbraco/dynamicdave-translationhealth/api/v1/dictionary/imports/{key}';
+};
+
+export type GetImportErrors = {
+    /**
+     * Bad Request
+     */
+    400: ErrorResponse;
+    /**
+     * The resource is protected and requires an authentication token
+     */
+    401: unknown;
+    /**
+     * Not Found
+     */
+    404: ErrorResponse;
+};
+
+export type GetImportError = GetImportErrors[keyof GetImportErrors];
+
+export type GetImportResponses = {
+    /**
+     * OK
+     */
+    200: ImportDetailResponse;
+};
+
+export type GetImportResponse = GetImportResponses[keyof GetImportResponses];
+
+export type UndoImportData = {
+    body?: never;
+    path: {
+        key: string;
+    };
+    query?: never;
+    url: '/umbraco/dynamicdave-translationhealth/api/v1/dictionary/imports/{key}/undo';
+};
+
+export type UndoImportErrors = {
+    /**
+     * The resource is protected and requires an authentication token
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Not Found
+     */
+    404: ErrorResponse;
+    /**
+     * Conflict
+     */
+    409: ErrorResponse;
+    /**
+     * Internal Server Error
+     */
+    500: ErrorResponse;
+};
+
+export type UndoImportError = UndoImportErrors[keyof UndoImportErrors];
+
+export type UndoImportResponses = {
+    /**
+     * OK
+     */
+    200: UndoResponse;
+};
+
+export type UndoImportResponse = UndoImportResponses[keyof UndoImportResponses];
+
+export type GetMissingTranslationsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        culture?: string;
+        group?: string;
+        search?: string;
+        skip?: number;
+        take?: number;
+    };
+    url: '/umbraco/dynamicdave-translationhealth/api/v1/dictionary/missing';
+};
+
+export type GetMissingTranslationsErrors = {
+    /**
+     * Bad Request
+     */
+    400: ErrorResponse;
+    /**
+     * The resource is protected and requires an authentication token
+     */
+    401: unknown;
+};
+
+export type GetMissingTranslationsError = GetMissingTranslationsErrors[keyof GetMissingTranslationsErrors];
+
+export type GetMissingTranslationsResponses = {
+    /**
+     * OK
+     */
+    200: MissingResponse;
+};
+
+export type GetMissingTranslationsResponse = GetMissingTranslationsResponses[keyof GetMissingTranslationsResponses];
+
+export type GetDocumentTypesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/umbraco/dynamicdave-translationhealth/api/v1/document-types';
+};
+
+export type GetDocumentTypesErrors = {
+    /**
+     * The resource is protected and requires an authentication token
+     */
+    401: unknown;
+};
+
+export type GetDocumentTypesResponses = {
+    /**
+     * OK
+     */
+    200: Array<DocumentTypeModel>;
+};
+
+export type GetDocumentTypesResponse = GetDocumentTypesResponses[keyof GetDocumentTypesResponses];
+
+export type GetDocumentTranslationsData = {
+    body?: never;
+    path: {
+        key: string;
+    };
+    query?: never;
+    url: '/umbraco/dynamicdave-translationhealth/api/v1/document/{key}';
+};
+
+export type GetDocumentTranslationsErrors = {
+    /**
+     * The resource is protected and requires an authentication token
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Not Found
+     */
+    404: ErrorResponse;
+};
+
+export type GetDocumentTranslationsError = GetDocumentTranslationsErrors[keyof GetDocumentTranslationsErrors];
+
+export type GetDocumentTranslationsResponses = {
+    /**
+     * OK
+     */
+    200: DocumentTranslationsResponse;
+};
+
+export type GetDocumentTranslationsResponse = GetDocumentTranslationsResponses[keyof GetDocumentTranslationsResponses];
+
+export type MarkUpToDateData = {
+    body?: never;
+    path: {
+        key: string;
+        culture: string;
+    };
+    query?: never;
+    url: '/umbraco/dynamicdave-translationhealth/api/v1/document/{key}/{culture}/mark-up-to-date';
+};
+
+export type MarkUpToDateErrors = {
+    /**
+     * The resource is protected and requires an authentication token
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Not Found
+     */
+    404: ErrorResponse;
+    /**
+     * Conflict
+     */
+    409: ErrorResponse;
+};
+
+export type MarkUpToDateError = MarkUpToDateErrors[keyof MarkUpToDateErrors];
+
+export type MarkUpToDateResponses = {
+    /**
+     * OK
+     */
+    200: DocumentTranslationsResponse;
+};
+
+export type MarkUpToDateResponse = MarkUpToDateResponses[keyof MarkUpToDateResponses];
+
+export type GetCurrentJobData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/umbraco/dynamicdave-translationhealth/api/v1/jobs/current';
+};
+
+export type GetCurrentJobErrors = {
+    /**
+     * The resource is protected and requires an authentication token
+     */
+    401: unknown;
+};
+
+export type GetCurrentJobResponses = {
+    /**
+     * OK
+     */
+    200: JobStateModel;
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type GetCurrentJobResponse = GetCurrentJobResponses[keyof GetCurrentJobResponses];
+
+export type GetLanguagesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/umbraco/dynamicdave-translationhealth/api/v1/languages';
+};
+
+export type GetLanguagesErrors = {
+    /**
+     * The resource is protected and requires an authentication token
+     */
+    401: unknown;
+};
+
+export type GetLanguagesResponses = {
+    /**
+     * OK
+     */
+    200: Array<LanguageModel>;
+};
+
+export type GetLanguagesResponse = GetLanguagesResponses[keyof GetLanguagesResponses];
+
+export type GetOverviewData = {
+    body?: never;
+    path?: never;
+    query?: {
+        siteRootKey?: string;
+        documentType?: string;
+        culture?: string;
+        status?: CellFilter;
+        search?: string;
+        onlyIssues?: boolean;
+        skip?: number;
+        take?: number;
+    };
+    url: '/umbraco/dynamicdave-translationhealth/api/v1/overview';
+};
+
+export type GetOverviewErrors = {
+    /**
+     * Bad Request
+     */
+    400: ErrorResponse;
+    /**
+     * The resource is protected and requires an authentication token
+     */
+    401: unknown;
+};
+
+export type GetOverviewError = GetOverviewErrors[keyof GetOverviewErrors];
+
+export type GetOverviewResponses = {
+    /**
+     * OK
+     */
+    200: OverviewResponse;
+};
+
+export type GetOverviewResponse = GetOverviewResponses[keyof GetOverviewResponses];
+
+export type ExportOverviewData = {
+    body?: never;
+    path?: never;
+    query?: {
+        siteRootKey?: string;
+        documentType?: string;
+        culture?: string;
+        status?: CellFilter;
+        search?: string;
+        onlyIssues?: boolean;
+    };
+    url: '/umbraco/dynamicdave-translationhealth/api/v1/overview/export';
+};
+
+export type ExportOverviewErrors = {
+    /**
+     * Bad Request
+     */
+    400: ErrorResponse;
+    /**
+     * The resource is protected and requires an authentication token
+     */
+    401: unknown;
+};
+
+export type ExportOverviewError = ExportOverviewErrors[keyof ExportOverviewErrors];
+
+export type ExportOverviewResponses = {
+    /**
+     * OK
+     */
+    200: Blob | File;
+};
+
+export type ExportOverviewResponse = ExportOverviewResponses[keyof ExportOverviewResponses];
+
+export type RebuildOverviewData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/umbraco/dynamicdave-translationhealth/api/v1/overview/rebuild';
+};
+
+export type RebuildOverviewErrors = {
+    /**
+     * The resource is protected and requires an authentication token
+     */
+    401: unknown;
+    /**
+     * Conflict
+     */
+    409: JobStateModel;
+};
+
+export type RebuildOverviewError = RebuildOverviewErrors[keyof RebuildOverviewErrors];
+
+export type RebuildOverviewResponses = {
+    /**
+     * OK
+     */
+    200: JobStateModel;
+};
+
+export type RebuildOverviewResponse = RebuildOverviewResponses[keyof RebuildOverviewResponses];
+
+export type GetOverviewTotalsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        siteRootKey?: string;
+        documentType?: string;
+    };
+    url: '/umbraco/dynamicdave-translationhealth/api/v1/overview/totals';
+};
+
+export type GetOverviewTotalsErrors = {
+    /**
+     * The resource is protected and requires an authentication token
+     */
+    401: unknown;
+};
+
+export type GetOverviewTotalsResponses = {
+    /**
+     * OK
+     */
+    200: Array<LanguageTotalModel>;
+};
+
+export type GetOverviewTotalsResponse = GetOverviewTotalsResponses[keyof GetOverviewTotalsResponses];
+
+export type GetSitesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/umbraco/dynamicdave-translationhealth/api/v1/sites';
+};
+
+export type GetSitesErrors = {
+    /**
+     * The resource is protected and requires an authentication token
+     */
+    401: unknown;
+};
+
+export type GetSitesResponses = {
+    /**
+     * OK
+     */
+    200: Array<SiteModel>;
+};
+
+export type GetSitesResponse = GetSitesResponses[keyof GetSitesResponses];
+
+export type GetStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/umbraco/dynamicdave-translationhealth/api/v1/status';
+};
+
+export type GetStatusErrors = {
+    /**
+     * The resource is protected and requires an authentication token
+     */
+    401: unknown;
+};
+
+export type GetStatusResponses = {
+    /**
+     * OK
+     */
+    200: StatusModel;
+};
+
+export type GetStatusResponse = GetStatusResponses[keyof GetStatusResponses];

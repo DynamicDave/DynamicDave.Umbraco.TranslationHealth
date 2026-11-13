@@ -1,7 +1,9 @@
+using System.Text.Json.Serialization;
 using DynamicDave.Umbraco.TranslationHealth.Status;
 
 namespace DynamicDave.Umbraco.TranslationHealth.Overview;
 
+[JsonConverter(typeof(JsonStringEnumConverter<CellFilter>))]
 public enum CellFilter
 {
     Missing,

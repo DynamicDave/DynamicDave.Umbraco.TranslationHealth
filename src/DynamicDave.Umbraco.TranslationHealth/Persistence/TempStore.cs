@@ -56,6 +56,21 @@ public sealed class TempStore(IScopeProvider scopeProvider, TimeProvider timePro
         return dto is null || IsExpired(dto.CreatedUtc, now) ? null : new TempEntry(dto.Content, dto.FileName);
     }
 
+    /// <summary>
+    /// Removes the entry. True only for the one caller that removed it (a single DELETE), so a plan can be claimed once,
+    /// also by two concurrent requests; false when it does not exist, has expired or was claimed already.
+    /// </summary>
+    public bool Delete(Guid key, TempKind kind)
+    {
+        var now = Now();
+        var kindValue = (int)kind;
+        using var scope = scopeProvider.CreateScope();
+        DeleteExpired(scope, now);
+        var removed = scope.Database.Execute(scope.SqlContext.Sql().Delete<TempDto>().Where<TempDto>(x => x.Key == key && x.Kind == kindValue));
+        scope.Complete();
+        return removed > 0;
+    }
+
     private DateTime Now() => timeProvider.GetUtcNow().UtcDateTime;
 
     // The same rule as IsExpired: entries created before now - TimeToLive.

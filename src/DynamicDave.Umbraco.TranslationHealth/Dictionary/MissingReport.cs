@@ -56,7 +56,7 @@ public static class MissingReport
         return (cultures.Select(c => new MissingCount(c, counts[c])).ToList(), sorted);
     }
 
-    private static bool InGroup(string groupName, string group) =>
+    internal static bool InGroup(string groupName, string group) =>
         groupName.Equals(group, StringComparison.OrdinalIgnoreCase)
         || groupName.StartsWith(group + ".", StringComparison.OrdinalIgnoreCase);
 }
