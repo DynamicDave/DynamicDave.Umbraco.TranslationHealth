@@ -7,7 +7,7 @@ public class CsvParserReadTests
     [Fact]
     public void Reads_dutch_excel_semicolon_export()
     {
-        var text = "﻿Key;nl;en\r\nHello;\"Hallo; wereld\";Hello\r\n\"a\"\"b\";x;y\r\n\r\n\r\n";
+        var text = "\uFEFFKey;nl;en\r\nHello;\"Hallo; wereld\";Hello\r\n\"a\"\"b\";x;y\r\n\r\n\r\n";
 
         var rows = CsvParser.Read(text);
 
