@@ -1,4 +1,5 @@
 using DynamicDave.Umbraco.TranslationHealth.Content;
+using DynamicDave.Umbraco.TranslationHealth.Dictionary;
 using DynamicDave.Umbraco.TranslationHealth.Documents;
 using DynamicDave.Umbraco.TranslationHealth.Indexing;
 using DynamicDave.Umbraco.TranslationHealth.Jobs;
@@ -32,6 +33,7 @@ public class TranslationHealthComposer : IComposer
         builder.Services.AddSingleton<DocumentTranslations>();
 
         builder.Services.AddSingleton<ISiteSource, UmbracoSiteSource>();
+        builder.Services.AddSingleton<IDictionarySource, UmbracoDictionarySource>();
         builder.Services.AddSingleton<IContentSnapshotSource, UmbracoContentSnapshotSource>();
 
         // One writer of the status rows per process (see Reindexer); the worker empties the queue the handlers fill.

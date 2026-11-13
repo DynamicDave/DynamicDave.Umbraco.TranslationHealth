@@ -1,0 +1,98 @@
+using Umbraco.Cms.Core.Models;
+using Umbraco.Cms.Core.Services;
+
+namespace DynamicDave.Umbraco.TranslationHealth.Dictionary;
+
+/// <summary>Reads and writes the dictionary through <see cref="IDictionaryItemService"/>. Every failed write throws with the Umbraco status.</summary>
+public sealed class UmbracoDictionarySource(IDictionaryItemService items, ILanguageService languages) : IDictionarySource
+{
+    public IReadOnlyList<DictionaryEntry> GetAll()
+    {
+        // A null parent returns every item of the dictionary, translations included, in one call.
+        var all = items.GetDescendantsAsync(null, null).GetAwaiter().GetResult();
+        return all.Select(ToEntry).ToList();
+    }
+
+    public async Task SetValuesAsync(Guid id, IReadOnlyDictionary<string, string> values, Guid userKey)
+    {
+        var item = await items.GetAsync(id) ?? throw new InvalidOperationException($"Dictionary item {id} was not found.");
+        var translations = item.Translations.ToList();
+
+        foreach (var (culture, value) in values)
+        {
+            var existing = translations.FirstOrDefault(t => string.Equals(t.LanguageIsoCode, culture, StringComparison.OrdinalIgnoreCase));
+            if (string.IsNullOrEmpty(value))
+            {
+                if (existing is not null)
+                {
+                    // UpdateAsync never deletes a translation row it was not given, so the removal is stored as an empty value (a read treats it as missing).
+                    existing.Value = string.Empty;
+                }
+            }
+            else if (existing is not null)
+            {
+                existing.Value = value;
+            }
+            else
+            {
+                var language = await languages.GetAsync(culture) ?? throw new InvalidOperationException($"Language {culture} was not found.");
+                translations.Add(new DictionaryTranslation(language, value));
+            }
+        }
+
+        item.Translations = translations;
+        var result = await items.UpdateAsync(item, userKey);
+        if (!result.Success)
+        {
+            throw new InvalidOperationException($"Updating dictionary item '{item.ItemKey}' failed: {result.Status}.");
+        }
+    }
+
+    public async Task<Guid> CreateAsync(string key, Guid? parentId, IReadOnlyDictionary<string, string> values, Guid userKey)
+    {
+        var item = new DictionaryItem(parentId, key);
+        var translations = new List<IDictionaryTranslation>();
+        foreach (var (culture, value) in values)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                continue;
+            }
+
+            var language = await languages.GetAsync(culture) ?? throw new InvalidOperationException($"Language {culture} was not found.");
+            translations.Add(new DictionaryTranslation(language, value));
+        }
+
+        item.Translations = translations;
+        var result = await items.CreateAsync(item, userKey);
+        if (!result.Success)
+        {
+            throw new InvalidOperationException($"Creating dictionary item '{key}' failed: {result.Status}.");
+        }
+
+        return result.Result.Key;
+    }
+
+    public async Task DeleteAsync(Guid id, Guid userKey)
+    {
+        var result = await items.DeleteAsync(id, userKey);
+        if (!result.Success)
+        {
+            throw new InvalidOperationException($"Deleting dictionary item {id} failed: {result.Status}.");
+        }
+    }
+
+    private static DictionaryEntry ToEntry(IDictionaryItem item)
+    {
+        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var translation in item.Translations)
+        {
+            if (!string.IsNullOrWhiteSpace(translation.Value))
+            {
+                values[translation.LanguageIsoCode] = translation.Value;
+            }
+        }
+
+        return new DictionaryEntry(item.Key, item.ItemKey, item.ParentId, values);
+    }
+}
