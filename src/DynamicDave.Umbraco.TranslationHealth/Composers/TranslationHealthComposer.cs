@@ -32,6 +32,7 @@ public class TranslationHealthComposer : IComposer
         builder.Services.AddSingleton<ReindexQueue>();
         builder.Services.AddSingleton<Reindexer>();
         builder.Services.AddSingleton<ReindexProcessor>();
+        builder.Services.AddSingleton<QuietGate>();
         builder.Services.AddSingleton<StartupCheck>();
         builder.Services.AddHostedService<ReindexWorker>();
 

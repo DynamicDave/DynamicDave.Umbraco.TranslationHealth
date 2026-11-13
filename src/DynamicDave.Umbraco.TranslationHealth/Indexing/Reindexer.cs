@@ -20,48 +20,52 @@ public sealed class Reindexer(
     private readonly List<KeyTracker> _trackers = [];
 
     /// <summary>Re-indexes a document from its current state; removes its rows when it is gone, trashed or not variant.</summary>
-    public void Reindex(Guid key, IndexMode mode)
+    public void Reindex(Guid key, IndexMode mode) => IndexBatch([(key, false)], mode);
+
+    public void Remove(Guid key) => IndexBatch([(key, true)], IndexMode.Save);
+
+    /// <summary>
+    /// Handles a batch of queued documents with one write transaction: the snapshots and previous rows are read first, the
+    /// rows computed, and everything is written at once (fewer commits matter on SQLite, where every commit of this
+    /// package can stall a read-then-write transaction of Umbraco). A document that is gone, trashed or not variant is removed.
+    /// </summary>
+    public void IndexBatch(IReadOnlyList<(Guid Key, bool Remove)> items, IndexMode mode)
     {
         lock (_gate)
         {
-            Touched(key);
-
-            // Read inside the lock, so a snapshot is never older than the rows it replaces.
-            var snapshot = snapshots.Get(key);
-            if (snapshot is null)
+            var removals = new List<Guid>();
+            var snapshotsToIndex = new List<DocumentSnapshot>();
+            foreach (var (key, remove) in items)
             {
-                store.Remove([key]);
-                return;
+                Touched(key);
+
+                // Read inside the lock, so a snapshot is never older than the rows it replaces.
+                var snapshot = remove ? null : snapshots.Get(key);
+                if (snapshot is null)
+                {
+                    removals.Add(key);
+                }
+                else
+                {
+                    snapshotsToIndex.Add(snapshot);
+                }
             }
 
-            IndexLocked(snapshot, mode);
+            store.SaveMany(Compute(snapshotsToIndex, mode), removals);
         }
     }
 
     /// <summary>
-    /// Re-indexes a document from a snapshot the caller read earlier (a rebuild paging through the documents). A document
-    /// that was re-indexed or removed since <see cref="BeginTracking"/> is skipped: that happened after the snapshot was
-    /// read or will be repeated, and the snapshot may be older.
+    /// Re-indexes the documents of a rebuild page, read earlier by the caller, with one write. A document that was
+    /// re-indexed or removed since <see cref="BeginTracking"/> is skipped: that happened after the snapshot was read or
+    /// will be repeated, and the snapshot may be older.
     /// </summary>
-    public void Reindex(DocumentSnapshot snapshot, IndexMode mode)
+    public void IndexPage(IReadOnlyList<DocumentSnapshot> page, IndexMode mode)
     {
         lock (_gate)
         {
-            if (_trackers.Any(tracker => tracker.Contains(snapshot.Key)))
-            {
-                return;
-            }
-
-            IndexLocked(snapshot, mode);
-        }
-    }
-
-    public void Remove(Guid key)
-    {
-        lock (_gate)
-        {
-            Touched(key);
-            store.Remove([key]);
+            var current = page.Where(snapshot => !_trackers.Any(tracker => tracker.Contains(snapshot.Key))).ToList();
+            store.SaveMany(Compute(current, mode), []);
         }
     }
 
@@ -105,33 +109,64 @@ public sealed class Reindexer(
     }
 
     /// <summary>
-    /// Removes every stored document that is neither in <paramref name="seen"/> nor touched while <paramref name="tracker"/>
-    /// was active. Runs under the lock, so a document indexed meanwhile is not removed.
+    /// Handles the stored documents that a rebuild did not see and that were not touched while <paramref name="tracker"/>
+    /// was active. Paging by offset can skip live documents when others are moved or deleted meanwhile, so each candidate
+    /// is looked up again: gone documents lose their rows, live ones are re-indexed. Runs under the lock, so a document
+    /// indexed meanwhile is not handled twice; one write for all.
     /// </summary>
-    public void RemoveOrphans(IReadOnlySet<Guid> seen, KeyTracker tracker)
+    public void RemoveOrphans(IReadOnlySet<Guid> seen, KeyTracker tracker, IndexMode mode)
     {
         lock (_gate)
         {
-            var keep = new HashSet<Guid>(seen);
-            keep.UnionWith(tracker.Keys());
-            store.RemoveExcept(keep);
+            var candidates = store.GetKeys().Where(key => !seen.Contains(key) && !tracker.Contains(key)).ToList();
+            var removals = new List<Guid>();
+            var live = new List<DocumentSnapshot>();
+            foreach (var key in candidates)
+            {
+                var snapshot = snapshots.Get(key);
+                if (snapshot is null)
+                {
+                    removals.Add(key);
+                }
+                else
+                {
+                    live.Add(snapshot);
+                }
+            }
+
+            store.SaveMany(Compute(live, mode), removals);
         }
     }
 
-    private void IndexLocked(DocumentSnapshot doc, IndexMode mode)
+    // The previous rows of all documents are read in one go; the caller writes the result in one transaction.
+    private List<IndexResult> Compute(IReadOnlyList<DocumentSnapshot> documents, IndexMode mode)
     {
-        var site = SiteResolver.SiteFor(doc.Path, sites.GetSites());
+        if (documents.Count == 0)
+        {
+            return [];
+        }
 
-        // No site found: all languages apply (an empty list means that) and the document belongs to no site.
-        var result = StatusIndexer.Index(
-            doc,
-            site?.RootKey ?? Guid.Empty,
-            sites.DefaultCulture(),
-            site?.Cultures ?? [],
-            store.GetVariants(doc.Key),
-            mode,
-            Now());
-        store.Save(result);
+        var previous = store.GetVariants(documents.Select(d => d.Key).ToList());
+        var siteList = sites.GetSites();
+        var defaultCulture = sites.DefaultCulture();
+        var now = Now();
+        var results = new List<IndexResult>(documents.Count);
+        foreach (var doc in documents)
+        {
+            var site = SiteResolver.SiteFor(doc.Path, siteList);
+
+            // No site found: all languages apply (an empty list means that) and the document belongs to no site.
+            results.Add(StatusIndexer.Index(
+                doc,
+                site?.RootKey ?? Guid.Empty,
+                defaultCulture,
+                site?.Cultures ?? [],
+                previous.GetValueOrDefault(doc.Key) ?? [],
+                mode,
+                now));
+        }
+
+        return results;
     }
 
     private void Touched(Guid key)
@@ -157,8 +192,6 @@ public sealed class Reindexer(
         internal void Add(Guid key) => _keys.Add(key);
 
         internal bool Contains(Guid key) => _keys.Contains(key);
-
-        internal IReadOnlyCollection<Guid> Keys() => _keys;
 
         public void Dispose()
         {

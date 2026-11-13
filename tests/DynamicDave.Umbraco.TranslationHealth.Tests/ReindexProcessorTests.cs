@@ -52,6 +52,7 @@ public class ReindexProcessorTests
         Assert.Equal(451, handled);
         Assert.Equal(keys.Order(), _store.Keys.Order());
         Assert.Equal(0, _queue.Count);
+        Assert.Equal(3, _store.SaveManyCalls); // 200 + 200 + 51 documents: one write transaction per batch
     }
 
     [Fact]

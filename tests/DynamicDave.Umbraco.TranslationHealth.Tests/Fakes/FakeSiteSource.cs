@@ -14,7 +14,10 @@ internal sealed class FakeSiteSource : ISiteSource
 
     public IReadOnlyList<SiteInfo> GetSites() => Sites;
 
-    public string DefaultCulture() => Default;
+    /// <summary>Makes <see cref="DefaultCulture"/> throw, like a database that is not reachable yet.</summary>
+    public bool Failing { get; set; }
+
+    public string DefaultCulture() => Failing ? throw new InvalidOperationException("Database not ready") : Default;
 
     public IReadOnlyList<string> AllCultures() => Cultures;
 

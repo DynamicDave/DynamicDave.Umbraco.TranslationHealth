@@ -8,7 +8,7 @@ namespace DynamicDave.Umbraco.TranslationHealth.Jobs;
 
 /// <summary>
 /// Starts rebuilds. The job runner allows one job at a time, so a rebuild that is asked for while one runs is remembered
-/// (once, in the strongest mode) and started by <see cref="StartPending"/>, which the indexing worker calls every few seconds.
+/// (once, in the strongest mode) and started by <see cref="StartPending"/>, which the indexing worker calls when editing paused.
 /// </summary>
 public sealed class RebuildScheduler(
     JobRunner runner,
@@ -20,6 +20,7 @@ public sealed class RebuildScheduler(
 
     private readonly object _gate = new();
     private Waiting? _pending;
+    private bool _configurationChanged;
 
     /// <summary>The rebuild waiting for the running job to finish, if any.</summary>
     internal IndexMode? PendingMode
@@ -39,15 +40,21 @@ public sealed class RebuildScheduler(
            && !string.Equals(storedDefaultCulture, currentDefaultCulture, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Asks for a rebuild after a change in languages, domains or document types: a normal rebuild, or one that clears
-    /// the baselines when the default language is no longer the one the stored status was built for.
+    /// Records that languages, domains or document types changed. Only a flag in memory (called on the request thread of
+    /// the editor); the worker then decides the mode and starts one rebuild for a whole burst of changes.
     /// </summary>
-    public JobState? RequestAfterConfigurationChange()
+    public void NoteConfigurationChanged()
     {
-        var mode = DefaultCultureChanged(keyValues.GetValue(Constants.DefaultCultureKey), sites.DefaultCulture())
-            ? IndexMode.RebuildClearBaselines
-            : IndexMode.Rebuild;
-        return Request(mode);
+        lock (_gate) _configurationChanged = true;
+    }
+
+    /// <summary>A rebuild is waiting to be started (asked for while a job ran, or after a configuration change).</summary>
+    public bool HasPending
+    {
+        get
+        {
+            lock (_gate) return _pending is not null || _configurationChanged;
+        }
     }
 
     /// <summary>
@@ -62,7 +69,7 @@ public sealed class RebuildScheduler(
 
         lock (_gate)
         {
-            _pending = _pending is { } waiting && waiting.Mode >= mode ? waiting : new Waiting(mode, userKey, userName);
+            Merge(mode, userKey, userName);
             var started = StartLocked();
             if (started is null)
             {
@@ -73,14 +80,36 @@ public sealed class RebuildScheduler(
         }
     }
 
-    /// <summary>Starts the remembered rebuild when no job is running any more (here or on another server).</summary>
+    /// <summary>
+    /// Starts the remembered rebuild when no job is running any more (here or on another server). A configuration change
+    /// is turned into a rebuild here, with the default language compared at this moment: a changed default language clears
+    /// the baselines, anything else keeps them.
+    /// </summary>
     public JobState? StartPending()
     {
         lock (_gate)
         {
+            if (_configurationChanged)
+            {
+                var changed = DefaultCultureChanged(keyValues.GetValue(Constants.DefaultCultureKey), sites.DefaultCulture());
+                Merge(changed ? IndexMode.RebuildClearBaselines : IndexMode.Rebuild, default, SystemUserName);
+                _configurationChanged = false;
+            }
+
             return _pending is null ? null : StartLocked();
         }
     }
+
+    // The stronger mode wins: a rebuild that clears baselines includes what a normal one does.
+    private static int Rank(IndexMode mode) => mode switch
+    {
+        IndexMode.RebuildClearBaselines => 2,
+        IndexMode.Rebuild => 1,
+        _ => 0,
+    };
+
+    private void Merge(IndexMode mode, Guid userKey, string userName)
+        => _pending = _pending is { } waiting && Rank(waiting.Mode) >= Rank(mode) ? waiting : new Waiting(mode, userKey, userName);
 
     private JobState? StartLocked()
     {

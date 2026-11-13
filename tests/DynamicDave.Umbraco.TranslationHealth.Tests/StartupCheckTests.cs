@@ -33,7 +33,7 @@ public class StartupCheckTests
         var scheduler = new RebuildScheduler(_runner, _sites, _keyValues, new ListLogger<RebuildScheduler>());
         var (state, control) = FakeRuntimeState.Create();
         _runtime = control;
-        _check = new StartupCheck(state, _role, _store, _sites, _keyValues, options, scheduler, new ListLogger<StartupCheck>());
+        _check = new StartupCheck(state, _role, _sites, _keyValues, options, scheduler, new ListLogger<StartupCheck>());
     }
 
     [Theory]
@@ -89,10 +89,42 @@ public class StartupCheckTests
     }
 
     [Fact]
+    public async Task A_rebuilt_store_without_documents_starts_no_rebuild()
+    {
+        // A site without variant documents has an empty store after every rebuild.
+        _role.Role = ServerRole.Single;
+        _keyValues.Values[Constants.LastRebuildKey] = "2026-11-13T12:00:00.0000000Z";
+        _keyValues.Values[Constants.DefaultCultureKey] = _sites.Default;
+        _keyValues.Values[Constants.ExcludedTypesKey] = RebuildJob.ExcludedTypesHash([]);
+
+        _check.Run();
+        await Task.Delay(50);
+
+        Assert.Null(_runner.Current());
+        Assert.Equal(0, _store.Count());
+    }
+
+    [Fact]
+    public async Task A_failing_check_is_tried_again()
+    {
+        _role.Role = ServerRole.Single;
+        _keyValues.Values[Constants.JobStateKey] = string.Empty;
+        _sites.Failing = true;
+        _check.Run();
+        Assert.Null(_runner.Current());
+
+        _sites.Failing = false;
+        _check.Run();
+        await _runner.LastRun!;
+
+        Assert.Equal(JobStatus.Completed, _runner.Current()!.Status);
+    }
+
+    [Fact]
     public async Task A_current_store_starts_no_rebuild()
     {
         _role.Role = ServerRole.Single;
-        _store.Save(new(new(Guid.NewGuid(), 1, null, "-1,1", "00001", 1, "page", Guid.Empty, "n"), []));
+        _keyValues.Values[Constants.LastRebuildKey] = "2026-11-13T12:00:00.0000000Z";
         _keyValues.Values[Constants.DefaultCultureKey] = _sites.Default;
         _keyValues.Values[Constants.ExcludedTypesKey] = RebuildJob.ExcludedTypesHash([]);
 

@@ -72,7 +72,8 @@ public sealed class ContentChangeHandlers(
     public void Handle(ContentTypeChangedNotification notification)
         => SitesChanged(notification, clearSnapshotCache: true);
 
-    // Domains and languages change which languages a site uses, document types which documents count at all.
+    // Domains and languages change which languages a site uses, document types which documents count at all. Only memory
+    // is touched here: the worker starts the rebuild, so a burst of changes gives one.
     private void SitesChanged(INotification notification, bool clearSnapshotCache = false)
         => Safe(
             () =>
@@ -87,7 +88,7 @@ public sealed class ContentChangeHandlers(
                 // Installing and upgrading raise these too; the startup check covers that.
                 if (runtimeState.Level == RuntimeLevel.Run)
                 {
-                    scheduler.RequestAfterConfigurationChange();
+                    scheduler.NoteConfigurationChanged();
                 }
             },
             notification);

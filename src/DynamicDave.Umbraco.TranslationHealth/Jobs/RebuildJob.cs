@@ -26,9 +26,6 @@ public sealed class RebuildJob(
 {
     public const int PageSize = 200;
 
-    // Documents created or deleted while paging shift the pages; a second pass picks up what a shift skipped.
-    private const int MaxPasses = 3;
-
     /// <summary>Fingerprint of the configured excluded document types: changes when the list changes, not with its order or casing.</summary>
     public static string ExcludedTypesHash(IEnumerable<string> aliases)
     {
@@ -54,18 +51,24 @@ public sealed class RebuildJob(
 
         using var tracking = reindexer.BeginTracking();
         var seen = new HashSet<Guid>();
-        for (var pass = 0; pass < MaxPasses; pass++)
+        for (long page = 0; ; page++)
         {
-            if (!IndexAll(mode, seen, progress, cancellationToken))
+            cancellationToken.ThrowIfCancellationRequested();
+            var documents = snapshots.GetPage(page, PageSize, out var total);
+            seen.UnionWith(documents.Select(document => document.Key));
+            reindexer.IndexPage(documents, mode);
+            progress.Report(seen.Count, (int)Math.Max(total, seen.Count), JobPhases.Indexing);
+            if (documents.Count < PageSize || (page + 1) * PageSize >= total)
             {
                 break;
             }
         }
 
-        // Only a complete pass gets here (an exception or a cancel skipped this), so the rows left over are orphans.
+        // Only a complete pass gets here (an exception or a cancel skipped this). Paging by offset can skip live documents
+        // when others move meanwhile, so the rows of unseen documents are checked again, not just deleted.
         cancellationToken.ThrowIfCancellationRequested();
         progress.Report(seen.Count, seen.Count, JobPhases.RemovingOrphans);
-        reindexer.RemoveOrphans(seen, tracking);
+        reindexer.RemoveOrphans(seen, tracking, mode);
 
         keyValues.SetValue(Constants.DefaultCultureKey, defaultCulture);
         keyValues.SetValue(Constants.ExcludedTypesKey, excludedHash);
@@ -73,34 +76,5 @@ public sealed class RebuildJob(
 
         var summary = JsonSerializer.Serialize(new { documents = seen.Count });
         return Task.FromResult<(Guid?, TempKind?, string?)>((null, null, summary));
-    }
-
-    /// <summary>One pass over all pages; true when the number of documents changed meanwhile, so another pass is worth it.</summary>
-    private bool IndexAll(IndexMode mode, HashSet<Guid> seen, JobProgress progress, CancellationToken cancellationToken)
-    {
-        long? firstTotal = null;
-        var changed = false;
-        for (long page = 0; ; page++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var documents = snapshots.GetPage(page, PageSize, out var total);
-            firstTotal ??= total;
-            changed |= total != firstTotal;
-
-            foreach (var document in documents)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (seen.Add(document.Key))
-                {
-                    reindexer.Reindex(document, mode);
-                }
-            }
-
-            progress.Report(seen.Count, (int)Math.Max(total, seen.Count), JobPhases.Indexing);
-            if (documents.Count < PageSize || (page + 1) * PageSize >= total)
-            {
-                return changed;
-            }
-        }
     }
 }

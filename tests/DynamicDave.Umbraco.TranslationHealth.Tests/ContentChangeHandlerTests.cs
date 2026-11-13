@@ -129,37 +129,35 @@ public class ContentChangeHandlerTests
     }
 
     [Fact]
-    public async Task Domain_and_language_changes_clear_the_site_cache_and_start_a_rebuild()
+    public async Task Domain_and_language_changes_only_note_the_change_and_clear_the_site_cache()
     {
-        Assert.Null(_runner.Current());
-
         _handlers.Handle(new DomainSavedNotification(new UmbracoDomain("example.com") { RootContentId = 1 }, Messages()));
-        await _runner.LastRun!;
-
-        Assert.Equal(1, _sites.ClearCacheCalls);
-        Assert.Equal(0, _source.ClearCacheCalls);
-        Assert.Equal(JobKind.Rebuild, _runner.Current()!.Kind);
-        Assert.Equal(JobStatus.Completed, _runner.Current()!.Status);
-
         _handlers.Handle(new DomainDeletedNotification(new UmbracoDomain("example.com") { RootContentId = 1 }, Messages()));
         _handlers.Handle(new LanguageSavedNotification(new Language("nl-NL", "Dutch"), Messages()));
         _handlers.Handle(new LanguageDeletedNotification(new Language("nl-NL", "Dutch"), Messages()));
-        await _runner.LastRun!;
 
+        // Nothing started on the request thread: the worker does that.
+        Assert.Null(_runner.Current());
+        Assert.True(_scheduler.HasPending);
         Assert.Equal(4, _sites.ClearCacheCalls);
         Assert.Equal(0, _source.ClearCacheCalls);
+
+        Assert.NotNull(_scheduler.StartPending());
+        await _runner.LastRun!;
+        Assert.Equal(JobKind.Rebuild, _runner.Current()!.Kind);
+        Assert.Equal(JobStatus.Completed, _runner.Current()!.Status);
     }
 
     [Fact]
-    public async Task A_document_type_change_also_clears_the_snapshot_cache()
+    public void A_document_type_change_also_clears_the_snapshot_cache()
     {
         _handlers.Handle(new ContentTypeChangedNotification(
             new ContentTypeChange<IContentType>(_type, ContentTypeChangeTypes.RefreshMain), Messages()));
-        await _runner.LastRun!;
 
         Assert.Equal(1, _sites.ClearCacheCalls);
         Assert.Equal(1, _source.ClearCacheCalls);
-        Assert.NotNull(_runner.Current());
+        Assert.True(_scheduler.HasPending);
+        Assert.Null(_runner.Current());
     }
 
     [Fact]
@@ -170,7 +168,7 @@ public class ContentChangeHandlerTests
         _handlers.Handle(new LanguageSavedNotification(new Language("nl-NL", "Dutch"), Messages()));
 
         Assert.Equal(1, _sites.ClearCacheCalls);
-        Assert.Null(_runner.Current());
+        Assert.False(_scheduler.HasPending);
     }
 
     private sealed class ThrowingSource : DynamicDave.Umbraco.TranslationHealth.Content.IContentSnapshotSource

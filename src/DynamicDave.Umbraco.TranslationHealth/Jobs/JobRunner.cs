@@ -8,7 +8,7 @@ using Umbraco.Cms.Core.Services;
 namespace DynamicDave.Umbraco.TranslationHealth.Jobs;
 
 /// <summary>
-/// Runs the one background job of the installation (generate, apply or undo). The state lives in umbracoKeyValue, so
+/// Runs the one background job of the installation (the rebuild). The state lives in umbracoKeyValue, so
 /// every server behind a load balancer sees it; starting a job claims it with compare-and-set on the stored value.
 /// </summary>
 public sealed class JobRunner(IKeyValueService keyValues, IServiceScopeFactory scopeFactory, TimeProvider timeProvider, ILogger<JobRunner> logger)

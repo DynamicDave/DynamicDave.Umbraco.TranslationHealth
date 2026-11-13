@@ -1,5 +1,4 @@
 using DynamicDave.Umbraco.TranslationHealth.Jobs;
-using DynamicDave.Umbraco.TranslationHealth.Persistence;
 using DynamicDave.Umbraco.TranslationHealth.Sites;
 using DynamicDave.Umbraco.TranslationHealth.Status;
 using Microsoft.Extensions.Logging;
@@ -21,7 +20,6 @@ namespace DynamicDave.Umbraco.TranslationHealth.Indexing;
 public sealed class StartupCheck(
     IRuntimeState runtimeState,
     IServerRoleAccessor serverRoleAccessor,
-    ITranslationStatusStore store,
     ISiteSource sites,
     IKeyValueService keyValues,
     IOptionsMonitor<TranslationHealthOptions> options,
@@ -30,17 +28,21 @@ public sealed class StartupCheck(
 {
     private volatile bool _done;
 
+    private const int MaxAttempts = 5;
+    private int _failures;
+
     /// <summary>The rebuild the stored state calls for, or null when it is current.</summary>
+    /// <param name="lastRebuild">The stored completion time of the last rebuild; empty when none ever completed.</param>
     public static IndexMode? Decide(
-        int storedDocuments, string? storedDefaultCulture, string defaultCulture, string? storedExcludedHash, string excludedHash)
+        string? lastRebuild, string? storedDefaultCulture, string defaultCulture, string? storedExcludedHash, string excludedHash)
     {
         if (RebuildScheduler.DefaultCultureChanged(storedDefaultCulture, defaultCulture))
         {
             return IndexMode.RebuildClearBaselines;
         }
 
-        // No stored default culture: no rebuild ever completed.
-        return storedDocuments == 0 || string.IsNullOrEmpty(storedDefaultCulture) || storedExcludedHash != excludedHash
+        // Nothing stored: no rebuild ever completed. An empty store after a rebuild just means a site without variant documents.
+        return string.IsNullOrEmpty(lastRebuild) || string.IsNullOrEmpty(storedDefaultCulture) || storedExcludedHash != excludedHash
             ? IndexMode.Rebuild
             : null;
     }
@@ -60,16 +62,16 @@ public sealed class StartupCheck(
             return;
         }
 
-        _done = true;
         if (role is not (ServerRole.Single or ServerRole.SchedulingPublisher))
         {
+            _done = true;
             return;
         }
 
         try
         {
             var mode = Decide(
-                store.Count(),
+                keyValues.GetValue(Constants.LastRebuildKey),
                 keyValues.GetValue(Constants.DefaultCultureKey),
                 sites.DefaultCulture(),
                 keyValues.GetValue(Constants.ExcludedTypesKey),
@@ -79,17 +81,14 @@ public sealed class StartupCheck(
                 logger.LogInformation("Translation health starts a rebuild of the translation status at startup ({Mode})", rebuild);
                 scheduler.Request(rebuild);
             }
+
+            _done = true;
         }
         catch (Exception ex)
         {
-            // Never keep the site from starting.
-            logger.LogError(ex, "Translation health could not check its translation status at startup");
+            // Never keep the site from starting. A transient error is retried by the worker, a few times.
+            _done = ++_failures >= MaxAttempts;
+            logger.LogError(ex, "Translation health could not check its translation status at startup (attempt {Attempt})", _failures);
         }
     }
-}
-
-/// <summary>Tries the <see cref="StartupCheck"/> when the application has started; the worker repeats it until it ran.</summary>
-public sealed class StartupCheckHandler(StartupCheck check) : INotificationHandler<UmbracoApplicationStartedNotification>
-{
-    public void Handle(UmbracoApplicationStartedNotification notification) => check.Run();
 }

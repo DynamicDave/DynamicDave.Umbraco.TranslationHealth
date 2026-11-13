@@ -183,25 +183,48 @@ public class RebuildJobTests
     }
 
     [Fact]
-    public async Task Rebuild_indexes_documents_that_a_deletion_shifted_out_of_the_pages()
+    public async Task Rebuild_keeps_the_rows_of_live_documents_that_a_move_shifted_out_of_the_pages()
     {
         var keys = AddDocuments(600);
+        await Run();
+        var baseline = new Dictionary<Guid, VariantRow>();
+        foreach (var key in keys)
+        {
+            var nl = _store.GetVariants(key).Single(v => v.Culture == Nl);
+            baseline[key] = nl with { BaselineFingerprint = "mark", BaselineSource = BaselineSource.MarkedUpToDate };
+            _store.SaveVariant(baseline[key]);
+        }
 
-        // Page 0 and 1 are read; deleting a document from the first page moves the third page one place: key 400 is skipped.
+        // While page 1 is read, a block of documents moves from the first page behind the cursor: the pages shift and
+        // documents 400..449 are never returned. Their rows (with marks) must survive.
         _source.OnGetPage = page =>
         {
             if (page == 1)
             {
                 _source.OnGetPage = null;
-                _source.Remove(keys[0]);
-                _reindexer.Remove(keys[0]);
+                foreach (var key in keys.Take(50))
+                {
+                    var document = _source.Get(key)!;
+                    _source.Remove(key);
+                    _source.Add(document);
+                }
             }
         };
 
         await Run();
 
-        Assert.NotNull(_store.GetDocument(keys[400]));
-        Assert.Equal(599, _store.Count());
+        Assert.Equal(600, _store.Count());
+        Assert.All(keys, key => Assert.Equal("mark", _store.GetVariants(key).Single(v => v.Culture == Nl).BaselineFingerprint));
+    }
+
+    [Fact]
+    public async Task Rebuild_writes_one_transaction_per_page_and_one_for_the_orphans()
+    {
+        AddDocuments(450);
+
+        await Run();
+
+        Assert.Equal(4, _store.SaveManyCalls); // pages of 200, 200 and 50, then the orphan check
     }
 
     [Fact]
@@ -261,19 +284,19 @@ public class RebuildJobTests
     }
 
     [Theory]
-    [InlineData(0, null, "en-US", null, "h", IndexMode.Rebuild)]
-    [InlineData(5, "en-US", "en-US", "h", "h", null)]
-    [InlineData(5, "EN-us", "en-US", "h", "h", null)]
-    [InlineData(0, "en-US", "en-US", "h", "h", IndexMode.Rebuild)]
-    [InlineData(5, "en-US", "en-US", "old", "h", IndexMode.Rebuild)]
-    [InlineData(5, "en-US", "en-US", null, "h", IndexMode.Rebuild)]
-    [InlineData(5, "en-US", "nl-NL", "h", "h", IndexMode.RebuildClearBaselines)]
-    [InlineData(0, "en-US", "nl-NL", null, "h", IndexMode.RebuildClearBaselines)]
-    [InlineData(5, null, "en-US", "h", "h", IndexMode.Rebuild)]
+    [InlineData(null, null, "en-US", null, "h", IndexMode.Rebuild)]
+    [InlineData("t", "en-US", "en-US", "h", "h", null)]
+    [InlineData("t", "EN-us", "en-US", "h", "h", null)]
+    [InlineData(null, "en-US", "en-US", "h", "h", IndexMode.Rebuild)]
+    [InlineData("t", "en-US", "en-US", "old", "h", IndexMode.Rebuild)]
+    [InlineData("t", "en-US", "en-US", null, "h", IndexMode.Rebuild)]
+    [InlineData("t", "en-US", "nl-NL", "h", "h", IndexMode.RebuildClearBaselines)]
+    [InlineData(null, "en-US", "nl-NL", null, "h", IndexMode.RebuildClearBaselines)]
+    [InlineData("t", null, "en-US", "h", "h", IndexMode.Rebuild)]
     public void Startup_check_decides_the_rebuild(
-        int stored, string? storedDefault, string current, string? storedHash, string hash, IndexMode? expected)
+        string? lastRebuild, string? storedDefault, string current, string? storedHash, string hash, IndexMode? expected)
     {
-        Assert.Equal(expected, StartupCheck.Decide(stored, storedDefault, current, storedHash, hash));
+        Assert.Equal(expected, StartupCheck.Decide(lastRebuild, storedDefault, current, storedHash, hash));
     }
 
     // The scheduler on a real job runner: one job at a time.
@@ -354,6 +377,22 @@ public class RebuildJobTests
             Assert.Equal(JobStatus.Completed, _runner.Current()!.Status);
         }
 
+        [Fact]
+        public async Task A_burst_of_configuration_changes_gives_one_rebuild()
+        {
+            _scheduler.NoteConfigurationChanged();
+            _scheduler.NoteConfigurationChanged();
+            _scheduler.NoteConfigurationChanged();
+            Assert.Null(_runner.Current());
+
+            Assert.NotNull(_scheduler.StartPending());
+            await _runner.LastRun!;
+            Assert.Null(_scheduler.StartPending());
+
+            Assert.Equal(1, _source.GetPageCalls);
+            Assert.False(_scheduler.HasPending);
+        }
+
         [Theory]
         [InlineData("nl-NL", IndexMode.RebuildClearBaselines)]
         [InlineData("en-US", IndexMode.Rebuild)]
@@ -369,8 +408,9 @@ public class RebuildJobTests
             Assert.NotNull(_scheduler.Request(IndexMode.Rebuild));
             Assert.True(entered.Wait(TimeSpan.FromSeconds(10)));
 
-            Assert.Null(_scheduler.RequestAfterConfigurationChange());
-            // Rebuild and Rebuild: the same mode; ClearBaselines is stronger than the running one.
+            _scheduler.NoteConfigurationChanged();
+            Assert.True(_scheduler.HasPending);
+            Assert.Null(_scheduler.StartPending()); // a job is running: remembered
             Assert.Equal(expected, _scheduler.PendingMode);
 
             release.Set();

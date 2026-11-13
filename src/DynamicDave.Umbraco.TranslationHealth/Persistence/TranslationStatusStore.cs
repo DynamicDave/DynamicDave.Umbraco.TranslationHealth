@@ -20,6 +20,36 @@ public sealed class TranslationStatusStore(IScopeProvider scopeProvider) : ITran
             .ToList();
     }
 
+    public IReadOnlyDictionary<Guid, IReadOnlyList<VariantRow>> GetVariants(IReadOnlyCollection<Guid> documentKeys)
+    {
+        var result = documentKeys.Distinct().ToDictionary(key => key, _ => (IReadOnlyList<VariantRow>)[]);
+        if (result.Count == 0)
+        {
+            return result;
+        }
+
+        using var scope = scopeProvider.CreateScope(autoComplete: true);
+        foreach (var chunk in result.Keys.Chunk(ChunkSize))
+        {
+            var dtos = scope.Database.Fetch<VariantDto>(scope.SqlContext.Sql()
+                .Select<VariantDto>().From<VariantDto>()
+                .WhereIn<VariantDto>(x => x.DocumentKey, chunk)
+                .OrderBy<VariantDto>(x => x.Culture));
+            foreach (var group in dtos.GroupBy(dto => dto.DocumentKey))
+            {
+                result[group.Key] = group.Select(StatusRowMapping.ToRow).ToList();
+            }
+        }
+
+        return result;
+    }
+
+    public IReadOnlyList<Guid> GetKeys()
+    {
+        using var scope = scopeProvider.CreateScope(autoComplete: true);
+        return scope.Database.Fetch<Guid>(scope.SqlContext.Sql().Select<DocumentDto>(x => x.Key).From<DocumentDto>());
+    }
+
     public DocumentRow? GetDocument(Guid key)
     {
         using var scope = scopeProvider.CreateScope(autoComplete: true);
@@ -28,16 +58,26 @@ public sealed class TranslationStatusStore(IScopeProvider scopeProvider) : ITran
         return dto is null ? null : StatusRowMapping.ToRow(dto);
     }
 
-    public void Save(IndexResult result)
+    public void Save(IndexResult result) => SaveMany([result], []);
+
+    public void SaveMany(IReadOnlyList<IndexResult> results, IReadOnlyCollection<Guid> removals)
     {
-        var key = result.Document.Key;
-        using var scope = scopeProvider.CreateScope();
-        DeleteVariants(scope, key);
-        scope.Database.Execute(scope.SqlContext.Sql().Delete<DocumentDto>().Where<DocumentDto>(x => x.Key == key));
-        scope.Database.Insert(StatusRowMapping.ToDto(result.Document));
-        foreach (var variant in result.Variants)
+        if (results.Count == 0 && removals.Count == 0)
         {
-            scope.Database.Insert(StatusRowMapping.ToDto(variant with { DocumentKey = key }));
+            return;
+        }
+
+        using var scope = scopeProvider.CreateScope();
+
+        // Delete first: the transaction takes the write lock with its first statement and never upgrades a read snapshot.
+        RemoveKeys(scope, removals.Concat(results.Select(r => r.Document.Key)).Distinct().ToList());
+        foreach (var result in results)
+        {
+            scope.Database.Insert(StatusRowMapping.ToDto(result.Document));
+            foreach (var variant in result.Variants)
+            {
+                scope.Database.Insert(StatusRowMapping.ToDto(variant with { DocumentKey = result.Document.Key }));
+            }
         }
 
         scope.Complete();
@@ -66,16 +106,6 @@ public sealed class TranslationStatusStore(IScopeProvider scopeProvider) : ITran
         scope.Complete();
     }
 
-    // Up to ~50,000 keys to keep: read the stored keys and delete the difference in chunks instead of a huge NOT IN.
-    public void RemoveExcept(IReadOnlySet<Guid> keepKeys)
-    {
-        using var scope = scopeProvider.CreateScope();
-        var stored = scope.Database.Fetch<Guid>(scope.SqlContext.Sql().Select<DocumentDto>(x => x.Key).From<DocumentDto>());
-        var obsolete = stored.Where(key => !keepKeys.Contains(key)).ToList();
-        RemoveKeys(scope, obsolete);
-        scope.Complete();
-    }
-
     public int Count()
     {
         using var scope = scopeProvider.CreateScope(autoComplete: true);
@@ -90,7 +120,4 @@ public sealed class TranslationStatusStore(IScopeProvider scopeProvider) : ITran
             scope.Database.Execute(scope.SqlContext.Sql().Delete<DocumentDto>().WhereIn<DocumentDto>(x => x.Key, chunk));
         }
     }
-
-    private static void DeleteVariants(IScope scope, Guid documentKey)
-        => scope.Database.Execute(scope.SqlContext.Sql().Delete<VariantDto>().Where<VariantDto>(x => x.DocumentKey == documentKey));
 }

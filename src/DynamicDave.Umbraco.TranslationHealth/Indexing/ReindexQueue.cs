@@ -11,6 +11,17 @@ public sealed class ReindexQueue
     private readonly Queue<Guid> _order = new();
     private readonly Dictionary<Guid, bool> _pending = [];
 
+    private long _enqueued;
+
+    /// <summary>How many keys were ever queued: a change tells the worker that editing is still going on.</summary>
+    public long Enqueued
+    {
+        get
+        {
+            lock (_gate) return _enqueued;
+        }
+    }
+
     public int Count
     {
         get
@@ -47,6 +58,7 @@ public sealed class ReindexQueue
         {
             foreach (var key in keys)
             {
+                _enqueued++;
                 if (!_pending.ContainsKey(key))
                 {
                     _order.Enqueue(key);

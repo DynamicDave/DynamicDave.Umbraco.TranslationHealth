@@ -28,6 +28,43 @@ internal sealed class FakeStatusStore : ITranslationStatusStore
         lock (_gate) return _variants.TryGetValue(documentKey, out var rows) ? [.. rows] : [];
     }
 
+    public IReadOnlyDictionary<Guid, IReadOnlyList<VariantRow>> GetVariants(IReadOnlyCollection<Guid> documentKeys)
+    {
+        lock (_gate)
+        {
+            return documentKeys.Distinct().ToDictionary(
+                key => key, key => _variants.TryGetValue(key, out var rows) ? (IReadOnlyList<VariantRow>)[.. rows] : []);
+        }
+    }
+
+    public IReadOnlyList<Guid> GetKeys()
+    {
+        lock (_gate) return [.. _documents.Keys];
+    }
+
+    /// <summary>Number of <see cref="SaveMany"/> calls: one per write transaction of the real store.</summary>
+    public int SaveManyCalls { get; private set; }
+
+    public void SaveMany(IReadOnlyList<IndexResult> results, IReadOnlyCollection<Guid> removals)
+    {
+        OnSave?.Invoke();
+        lock (_gate)
+        {
+            SaveManyCalls++;
+            foreach (var key in removals)
+            {
+                _documents.Remove(key);
+                _variants.Remove(key);
+            }
+
+            foreach (var result in results)
+            {
+                _documents[result.Document.Key] = result.Document;
+                _variants[result.Document.Key] = [.. result.Variants];
+            }
+        }
+    }
+
     public DocumentRow? GetDocument(Guid key)
     {
         lock (_gate) return _documents.GetValueOrDefault(key);
@@ -60,18 +97,6 @@ internal sealed class FakeStatusStore : ITranslationStatusStore
         lock (_gate)
         {
             foreach (var key in documentKeys)
-            {
-                _documents.Remove(key);
-                _variants.Remove(key);
-            }
-        }
-    }
-
-    public void RemoveExcept(IReadOnlySet<Guid> keepKeys)
-    {
-        lock (_gate)
-        {
-            foreach (var key in _documents.Keys.Where(k => !keepKeys.Contains(k)).ToList())
             {
                 _documents.Remove(key);
                 _variants.Remove(key);
