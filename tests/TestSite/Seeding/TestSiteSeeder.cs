@@ -309,6 +309,11 @@ public class TestSiteSeeder(
             {
                 Publish(page, Cultures);
             }
+
+            if (i % 500 == 0)
+            {
+                logger.LogInformation("Seeded {Done} of {Count} load pages", i, count);
+            }
         }
     }
 
