@@ -25,6 +25,16 @@ public class ImportPlannerTests
             options ?? new ImportOptions(false, false));
 
     [Fact]
+    public void Items_of_existing_entries_carry_the_entry_id_and_new_keys_do_not()
+    {
+        var entry = Entry("A", null, ("en-US", "Hello"));
+        var plan = Plan(Csv(Row(2, "A", ("nl-NL", "Hallo")), Row(3, "B", ("nl-NL", "Hoi"))), [entry], new ImportOptions(false, true));
+
+        Assert.Equal(entry.Id, plan.Items.Single(i => i.Key == "A").EntryId);
+        Assert.Null(plan.Items.Single(i => i.Key == "B").EntryId);
+    }
+
+    [Fact]
     public void Empty_value_is_new_value()
     {
         var plan = Plan(Csv(Row(2, "A", ("nl-NL", "Hallo"))), [Entry("A", null, ("en-US", "Hello"))]);

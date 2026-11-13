@@ -1,12 +1,13 @@
 using DynamicDave.Umbraco.TranslationHealth.Dictionary;
 using DynamicDave.Umbraco.TranslationHealth.Persistence;
+using Microsoft.Extensions.Logging;
 
 namespace DynamicDave.Umbraco.TranslationHealth.Importing;
 
 public sealed record UndoResult(int Restored, int KeysRemoved, IReadOnlyList<ImportRowRecord> LeftAlone);
 
 /// <summary>Reverts an applied import, leaving alone everything that was edited after it.</summary>
-public sealed class ImportUndoer(IDictionarySource dictionary, IImportHistory history, TimeProvider time)
+public sealed class ImportUndoer(IDictionarySource dictionary, IImportHistory history, TimeProvider time, ILogger<ImportUndoer> logger)
 {
     public async Task<UndoResult> UndoAsync(Guid importKey, Guid userKey, string userName)
     {
@@ -17,17 +18,30 @@ public sealed class ImportUndoer(IDictionarySource dictionary, IImportHistory hi
             throw new InvalidOperationException("The import is unknown or has already been undone.");
         }
 
+        var progress = new Progress();
+        try
+        {
+            return await RestoreAsync(importKey, userKey, progress);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex,
+                "Undoing import {ImportKey} failed after restoring {Restored} values and removing {Removed} keys; it stays marked undone",
+                importKey, progress.Restored, progress.Removed);
+            throw;
+        }
+    }
+
+    private async Task<UndoResult> RestoreAsync(Guid importKey, Guid userKey, Progress progress)
+    {
         var rows = history.Rows(importKey);
-        var entries = dictionary.GetAll().ToList();
         var byKey = new Dictionary<string, DictionaryEntry>(StringComparer.OrdinalIgnoreCase);
-        foreach (var entry in entries)
+        foreach (var entry in dictionary.GetAll())
         {
             byKey.TryAdd(entry.Key.Trim(), entry);
         }
 
         var leftAlone = new List<ImportRowRecord>();
-        var restored = 0;
-        var removed = 0;
 
         foreach (var group in rows.Where(r => !r.KeyCreated).GroupBy(r => r.Key, StringComparer.OrdinalIgnoreCase))
         {
@@ -37,53 +51,41 @@ public sealed class ImportUndoer(IDictionarySource dictionary, IImportHistory hi
                 continue;
             }
 
-            var restore = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var row in group)
-            {
-                if (ImportPlanner.SameValue(ImportApplier.Lookup(entry.Values, row.Culture), row.NewValue))
-                {
-                    restore[row.Culture] = row.OldValue ?? string.Empty;
-                }
-                else
-                {
-                    leftAlone.Add(row);
-                }
-            }
-
-            if (restore.Count > 0)
-            {
-                await dictionary.SetValuesAsync(entry.Id, restore, userKey);
-                restored += restore.Count;
-            }
+            var result = await dictionary.SetValuesAsync(entry.Id,
+                group.Select(r => new ValueChange(r.Culture, r.NewValue, r.OldValue ?? string.Empty)).ToList(), userKey);
+            progress.Restored += result.Written.Count;
+            leftAlone.AddRange(group.Where(r => result.Conflicts.Contains(r.Culture, StringComparer.OrdinalIgnoreCase)));
         }
 
         // Longest keys first, so created children go before the parents they sit under.
         foreach (var group in rows.Where(r => r.KeyCreated).GroupBy(r => r.Key, StringComparer.OrdinalIgnoreCase)
                      .OrderByDescending(g => g.Key.Length))
         {
-            if (!byKey.TryGetValue(group.Key.Trim(), out var entry) || !Untouched(entry, group.ToList(), entries))
+            // The entry is read again right before deleting: it may have been edited or given children since.
+            if (!byKey.TryGetValue(group.Key.Trim(), out var known)
+                || await dictionary.GetAsync(known.Id) is not { } fresh
+                || !Untouched(fresh, group.ToList())
+                || await dictionary.HasChildrenAsync(fresh.Id))
             {
                 leftAlone.AddRange(group);
                 continue;
             }
 
-            await dictionary.DeleteAsync(entry.Id, userKey);
-            entries.RemoveAll(e => e.Id == entry.Id);
-            removed++;
+            await dictionary.DeleteAsync(fresh.Id, userKey);
+            progress.Removed++;
         }
 
-        return new UndoResult(restored, removed, leftAlone);
+        return new UndoResult(progress.Restored, progress.Removed, leftAlone);
     }
 
-    private static bool Untouched(DictionaryEntry entry, List<ImportRowRecord> imported, List<DictionaryEntry> entries)
-    {
-        if (entries.Any(e => e.ParentId == entry.Id))
-        {
-            return false;
-        }
+    private static bool Untouched(DictionaryEntry entry, List<ImportRowRecord> imported)
+        => entry.Values.Count(v => !string.IsNullOrWhiteSpace(v.Value)) == imported.Count
+            && imported.All(r => DictionaryValues.SameValue(DictionaryValues.NonEmpty(entry.Values, r.Culture), r.NewValue));
 
-        var currentCount = entry.Values.Count(v => !string.IsNullOrWhiteSpace(v.Value));
-        return currentCount == imported.Count
-            && imported.All(r => ImportPlanner.SameValue(ImportApplier.Lookup(entry.Values, r.Culture), r.NewValue));
+    private sealed class Progress
+    {
+        public int Restored { get; set; }
+
+        public int Removed { get; set; }
     }
 }

@@ -21,7 +21,8 @@ public sealed record PlanItem(
     string? FileSource,
     string? CurrentSource,
     bool SourceChanged,
-    bool SelectedByDefault);
+    bool SelectedByDefault,
+    Guid? EntryId = null);
 
 public sealed record ImportPlan(
     Guid Id,

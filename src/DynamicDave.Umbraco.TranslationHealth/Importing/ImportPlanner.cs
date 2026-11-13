@@ -33,15 +33,15 @@ public static class ImportPlanner
         var items = new List<PlanItem>();
 
         void Add(ImportRow row, string key, string culture, ImportOutcome outcome, ImportErrorReason reason,
-            string? currentValue, string newValue, string? fileSource, string? currentSource, bool existing = true)
+            string? currentValue, string newValue, string? fileSource, string? currentSource, Guid? entryId)
         {
-            var sourceChanged = existing
+            var sourceChanged = entryId is not null
                 && file.Format == ImportFileFormat.Xliff
                 && fileSource is not null
-                && !string.Equals(NormalizeLineEndings(fileSource), NormalizeLineEndings(currentSource ?? string.Empty), StringComparison.Ordinal);
+                && !string.Equals(DictionaryValues.NormalizeLineEndings(fileSource), DictionaryValues.NormalizeLineEndings(currentSource ?? string.Empty), StringComparison.Ordinal);
             var selected = (outcome is ImportOutcome.NewValue or ImportOutcome.Overwrite or ImportOutcome.NewKey) && !sourceChanged;
             items.Add(new PlanItem(items.Count + 1, row.RowNumber, key, culture, outcome, reason, currentValue, newValue,
-                fileSource, currentSource, sourceChanged, selected));
+                fileSource, currentSource, sourceChanged, selected, entryId));
         }
 
         string CultureName(string culture) => installed.TryGetValue(culture, out var name) ? name : culture;
@@ -61,7 +61,7 @@ public static class ImportPlanner
             {
                 foreach (var (culture, value) in values)
                 {
-                    Add(row, rowKey, CultureName(culture), ImportOutcome.Error, ImportErrorReason.EmptyKey, null, value, fileSource, null, false);
+                    Add(row, rowKey, CultureName(culture), ImportOutcome.Error, ImportErrorReason.EmptyKey, null, value, fileSource, null, null);
                 }
 
                 continue;
@@ -71,7 +71,7 @@ public static class ImportPlanner
             var identity = entry is not null ? "e:" + entry.Id : "k:" + rowKey;
             var duplicate = !seen.Add(identity);
             var key = entry?.Key ?? rowKey;
-            var currentSource = entry is not null ? NonEmpty(entry.Values, defaultCulture) : null;
+            var currentSource = entry is not null ? DictionaryValues.NonEmpty(entry.Values, defaultCulture) : null;
 
             foreach (var (culture, value) in values)
             {
@@ -79,19 +79,19 @@ public static class ImportPlanner
 
                 if (duplicate)
                 {
-                    Add(row, key, name, ImportOutcome.Error, ImportErrorReason.DuplicateKey, null, value, fileSource, currentSource, entry is not null);
+                    Add(row, key, name, ImportOutcome.Error, ImportErrorReason.DuplicateKey, null, value, fileSource, currentSource, entry?.Id);
                     continue;
                 }
 
                 if (!installed.ContainsKey(culture))
                 {
-                    Add(row, key, name, ImportOutcome.Error, ImportErrorReason.UnknownLanguage, null, value, fileSource, currentSource, entry is not null);
+                    Add(row, key, name, ImportOutcome.Error, ImportErrorReason.UnknownLanguage, null, value, fileSource, currentSource, entry?.Id);
                     continue;
                 }
 
                 if (!editable.Contains(culture))
                 {
-                    Add(row, key, name, ImportOutcome.Error, ImportErrorReason.LanguageNotAllowed, null, value, fileSource, currentSource, entry is not null);
+                    Add(row, key, name, ImportOutcome.Error, ImportErrorReason.LanguageNotAllowed, null, value, fileSource, currentSource, entry?.Id);
                     continue;
                 }
 
@@ -100,16 +100,16 @@ public static class ImportPlanner
                     var outcome = options.CreateKeys && !rowKey.StartsWith(IdPrefix, StringComparison.OrdinalIgnoreCase)
                         ? ImportOutcome.NewKey
                         : ImportOutcome.SkippedUnknownKey;
-                    Add(row, key, name, outcome, ImportErrorReason.None, null, value, fileSource, null, false);
+                    Add(row, key, name, outcome, ImportErrorReason.None, null, value, fileSource, null, null);
                     continue;
                 }
 
-                var currentValue = NonEmpty(entry.Values, culture);
+                var currentValue = DictionaryValues.NonEmpty(entry.Values, culture);
                 var result = currentValue is null ? ImportOutcome.NewValue
-                    : NormalizeLineEndings(currentValue) == NormalizeLineEndings(value) ? ImportOutcome.Unchanged
+                    : DictionaryValues.NormalizeLineEndings(currentValue) == DictionaryValues.NormalizeLineEndings(value) ? ImportOutcome.Unchanged
                     : options.Overwrite ? ImportOutcome.Overwrite
                     : ImportOutcome.SkippedHasValue;
-                Add(row, key, name, result, ImportErrorReason.None, currentValue, value, fileSource, currentSource);
+                Add(row, key, name, result, ImportErrorReason.None, currentValue, value, fileSource, currentSource, entry.Id);
             }
         }
 
@@ -144,28 +144,5 @@ public static class ImportPlanner
         }
 
         return null;
-    }
-
-    private static string? NonEmpty(IReadOnlyDictionary<string, string> values, string culture)
-    {
-        foreach (var (name, value) in values)
-        {
-            if (string.Equals(name, culture, StringComparison.OrdinalIgnoreCase))
-            {
-                return string.IsNullOrWhiteSpace(value) ? null : value;
-            }
-        }
-
-        return null;
-    }
-
-    internal static string NormalizeLineEndings(string value) => value.Replace("\r\n", "\n").Replace('\r', '\n');
-
-    /// <summary>The planner's equality: line endings are ignored and a whitespace-only value equals no value.</summary>
-    internal static bool SameValue(string? left, string? right)
-    {
-        var a = string.IsNullOrWhiteSpace(left) ? string.Empty : NormalizeLineEndings(left);
-        var b = string.IsNullOrWhiteSpace(right) ? string.Empty : NormalizeLineEndings(right);
-        return string.Equals(a, b, StringComparison.Ordinal);
     }
 }

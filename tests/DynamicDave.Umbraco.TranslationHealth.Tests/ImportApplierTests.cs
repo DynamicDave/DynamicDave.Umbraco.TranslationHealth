@@ -1,5 +1,6 @@
 using DynamicDave.Umbraco.TranslationHealth.Dictionary;
 using DynamicDave.Umbraco.TranslationHealth.Files;
+using DynamicDave.Umbraco.TranslationHealth.Persistence;
 using DynamicDave.Umbraco.TranslationHealth.Importing;
 using DynamicDave.Umbraco.TranslationHealth.Tests.Fakes;
 
@@ -11,8 +12,10 @@ public class ImportApplierTests
     private readonly FakeDictionarySource _dictionary = new();
     private readonly FakeImportHistory _history = new();
 
-    private ImportApplier Applier(IDictionarySource? source = null) =>
-        new(source ?? _dictionary, _history, new ManualTimeProvider(new DateTimeOffset(2026, 11, 13, 10, 0, 0, TimeSpan.Zero)));
+    private readonly ListLogger<ImportApplier> _logger = new();
+
+    private ImportApplier Applier(IDictionarySource? source = null, IImportHistory? history = null) =>
+        new(source ?? _dictionary, history ?? _history, new ManualTimeProvider(new DateTimeOffset(2026, 11, 13, 10, 0, 0, TimeSpan.Zero)), _logger);
 
     private DictionaryEntry Add(string key, Guid? parent = null, params (string Culture, string Value)[] values)
     {
@@ -138,7 +141,7 @@ public class ImportApplierTests
         Add("A", null, ("en-US", "a"));
         Add("B", null, ("en-US", "b"));
         var plan = Plan(new ImportOptions(false, false), "f.csv", Row(2, "A", ("nl-NL", "1")), Row(3, "B", ("nl-NL", "2")));
-        var failing = new FailingSource(_dictionary, failOnSecondSet: true);
+        var failing = new FailingDictionarySource(_dictionary, failSet: 2);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => Applier(failing).ApplyAsync(plan, All(plan), Guid.NewGuid(), "Dave"));
 
@@ -152,7 +155,7 @@ public class ImportApplierTests
     {
         Add("A", null, ("en-US", "a"));
         var plan = Plan(new ImportOptions(false, false), "f.csv", Row(2, "A", ("nl-NL", "1")));
-        var failing = new FailingSource(_dictionary, failOnFirstSet: true);
+        var failing = new FailingDictionarySource(_dictionary, failSet: 1);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => Applier(failing).ApplyAsync(plan, All(plan), Guid.NewGuid(), "Dave"));
 
@@ -172,26 +175,75 @@ public class ImportApplierTests
         Assert.Equal(255, record.UserName.Length);
     }
 
-    private sealed class FailingSource(FakeDictionarySource inner, bool failOnFirstSet = false, bool failOnSecondSet = false) : IDictionarySource
+    [Fact]
+    public async Task Concurrent_edit_is_changed_and_not_recorded_in_history()
     {
-        private int _sets;
-
-        public IReadOnlyList<DictionaryEntry> GetAll() => inner.GetAll();
-
-        public Task SetValuesAsync(Guid id, IReadOnlyDictionary<string, string> values, Guid userKey)
+        Add("A", null, ("en-US", "Hello"), ("nl-NL", "Oud"));
+        var plan = Plan(new ImportOptions(true, false), "f.csv", Row(2, "A", ("nl-NL", "Nieuw")));
+        _dictionary.Entries[0] = _dictionary.Entries[0] with
         {
-            _sets++;
-            if ((failOnFirstSet && _sets == 1) || (failOnSecondSet && _sets == 2))
-            {
-                throw new InvalidOperationException("Umbraco refused");
-            }
+            Values = new Dictionary<string, string> { ["en-US"] = "Hello", ["nl-NL"] = "Edit" },
+        };
 
-            return inner.SetValuesAsync(id, values, userKey);
-        }
+        var result = await Applier().ApplyAsync(plan, All(plan), Guid.NewGuid(), "Dave");
 
-        public Task<Guid> CreateAsync(string key, Guid? parentId, IReadOnlyDictionary<string, string> values, Guid userKey)
-            => inner.CreateAsync(key, parentId, values, userKey);
+        Assert.Equal(0, result.Applied);
+        Assert.Equal(ApplyOutcome.Changed, result.Items.Single().Outcome);
+        Assert.Equal("Edit", _dictionary.Entries.Single().Values["nl-NL"]);
+        Assert.Equal(0, _history.SaveCount);
+    }
 
-        public Task DeleteAsync(Guid id, Guid userKey) => inner.DeleteAsync(id, userKey);
+    [Fact]
+    public async Task History_records_the_value_that_was_really_replaced()
+    {
+        Add("A", null, ("en-US", "Hello"), ("nl-NL", "a\nb"));
+        var plan = Plan(new ImportOptions(true, false), "f.csv", Row(2, "A", ("nl-NL", "Nieuw")));
+        _dictionary.Entries[0] = _dictionary.Entries[0] with
+        {
+            Values = new Dictionary<string, string> { ["en-US"] = "Hello", ["nl-NL"] = "a\r\nb" },
+        };
+
+        var result = await Applier().ApplyAsync(plan, All(plan), Guid.NewGuid(), "Dave");
+
+        Assert.Equal("a\r\nb", Assert.Single(_history.Rows(result.ImportKey)).OldValue);
+    }
+
+    [Fact]
+    public async Task Failed_create_after_earlier_creations_still_saves_history()
+    {
+        var plan = Plan(new ImportOptions(false, true), "f.csv", Row(2, "A", ("nl-NL", "1")), Row(3, "Bb", ("nl-NL", "2")));
+        var failing = new FailingDictionarySource(_dictionary, failCreate: 2);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Applier(failing).ApplyAsync(plan, All(plan), Guid.NewGuid(), "Dave"));
+
+        var record = Assert.Single(_history.List(0, 10).Items);
+        Assert.Equal("A", Assert.Single(_history.Rows(record.Key)).Key);
+    }
+
+    [Fact]
+    public async Task Failed_history_save_during_a_write_failure_rethrows_the_write_failure()
+    {
+        Add("A", null, ("en-US", "a"));
+        Add("B", null, ("en-US", "b"));
+        var plan = Plan(new ImportOptions(false, false), "f.csv", Row(2, "A", ("nl-NL", "1")), Row(3, "B", ("nl-NL", "2")));
+        var failing = new FailingDictionarySource(_dictionary, failSet: 2);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => Applier(failing, new ThrowingSaveHistory(_history)).ApplyAsync(plan, All(plan), Guid.NewGuid(), "Dave"));
+
+        Assert.Equal("Umbraco refused", error.Message);
+        Assert.Contains(_logger.Entries, e => e.Level == Microsoft.Extensions.Logging.LogLevel.Error && e.Message.Contains("A [nl-NL]"));
+    }
+
+    [Fact]
+    public async Task Failed_history_save_after_successful_writes_is_logged_and_rethrown()
+    {
+        Add("A", null, ("en-US", "a"));
+        var plan = Plan(new ImportOptions(false, false), "f.csv", Row(2, "A", ("nl-NL", "1")));
+
+        await Assert.ThrowsAsync<IOException>(
+            () => Applier(null, new ThrowingSaveHistory(_history)).ApplyAsync(plan, All(plan), Guid.NewGuid(), "Dave"));
+
+        Assert.Single(_logger.Entries, e => e.Message.Contains("A [nl-NL]"));
     }
 }
