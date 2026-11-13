@@ -51,7 +51,7 @@ public sealed class Reindexer(
                 }
             }
 
-            store.SaveMany(Compute(snapshotsToIndex, mode), removals);
+            Write(Compute(snapshotsToIndex, mode), removals);
         }
     }
 
@@ -65,7 +65,7 @@ public sealed class Reindexer(
         lock (_gate)
         {
             var current = page.Where(snapshot => !_trackers.Any(tracker => tracker.Contains(snapshot.Key))).ToList();
-            store.SaveMany(Compute(current, mode), []);
+            Write(Compute(current, mode), []);
         }
     }
 
@@ -110,31 +110,48 @@ public sealed class Reindexer(
 
     /// <summary>
     /// Handles the stored documents that a rebuild did not see and that were not touched while <paramref name="tracker"/>
-    /// was active. Paging by offset can skip live documents when others are moved or deleted meanwhile, so each candidate
-    /// is looked up again: gone documents lose their rows, live ones are re-indexed. Runs under the lock, so a document
-    /// indexed meanwhile is not handled twice; one write for all.
+    /// was active. Paging can skip live documents when others are deleted meanwhile, so each candidate is looked up
+    /// again: gone documents lose their rows, live ones are re-indexed. Works in chunks of <see cref="OrphanChunkSize"/>
+    /// with the lock taken per chunk (a content load per candidate must not block the worker for long), one write per chunk.
     /// </summary>
     public void RemoveOrphans(IReadOnlySet<Guid> seen, KeyTracker tracker, IndexMode mode)
     {
-        lock (_gate)
+        var candidates = store.GetKeys().Where(key => !seen.Contains(key)).ToList();
+        foreach (var chunk in candidates.Chunk(OrphanChunkSize))
         {
-            var candidates = store.GetKeys().Where(key => !seen.Contains(key) && !tracker.Contains(key)).ToList();
-            var removals = new List<Guid>();
-            var live = new List<DocumentSnapshot>();
-            foreach (var key in candidates)
+            lock (_gate)
             {
-                var snapshot = snapshots.Get(key);
-                if (snapshot is null)
+                var removals = new List<Guid>();
+                var live = new List<DocumentSnapshot>();
+                foreach (var key in chunk.Where(key => !tracker.Contains(key)))
                 {
-                    removals.Add(key);
+                    var snapshot = snapshots.Get(key);
+                    if (snapshot is null)
+                    {
+                        removals.Add(key);
+                    }
+                    else
+                    {
+                        live.Add(snapshot);
+                    }
                 }
-                else
-                {
-                    live.Add(snapshot);
-                }
-            }
 
-            store.SaveMany(Compute(live, mode), removals);
+                Write(Compute(live, mode), removals);
+            }
+        }
+    }
+
+    public const int OrphanChunkSize = 200;
+
+    private void Write(IReadOnlyList<IndexResult> results, IReadOnlyCollection<Guid> removals)
+    {
+        try
+        {
+            store.SaveMany(results, removals);
+        }
+        catch (Exception ex)
+        {
+            throw new IndexWriteException(ex);
         }
     }
 

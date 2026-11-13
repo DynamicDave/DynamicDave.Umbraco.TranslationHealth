@@ -224,7 +224,22 @@ public class RebuildJobTests
 
         await Run();
 
-        Assert.Equal(4, _store.SaveManyCalls); // pages of 200, 200 and 50, then the orphan check
+        Assert.Equal(3, _store.SaveManyCalls); // pages of 200, 200 and 50; nothing to remove
+    }
+
+    [Fact]
+    public async Task Orphans_are_handled_in_chunks_of_200_with_one_write_each()
+    {
+        for (var i = 0; i < 450; i++)
+        {
+            var key = Guid.NewGuid();
+            _store.Save(new IndexResult(new DocumentRow(key, 1000 + i, null, "-1,9", "00009", 1, "page", Guid.Empty, "gone"), []));
+        }
+
+        await Run();
+
+        Assert.Equal(0, _store.Count());
+        Assert.Equal(3, _store.SaveManyCalls);
     }
 
     [Fact]
@@ -393,28 +408,46 @@ public class RebuildJobTests
             Assert.False(_scheduler.HasPending);
         }
 
+        [Fact]
+        public async Task A_configuration_change_during_a_clearing_rebuild_does_not_clear_again()
+        {
+            // The default language changed: the running rebuild clears the baselines and then stores the new default.
+            _keyValues.Values[Constants.DefaultCultureKey] = "nl-NL";
+            var (entered, release) = BlockFirstRun();
+            Assert.NotNull(_scheduler.Request(IndexMode.RebuildClearBaselines));
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(10)));
+
+            _scheduler.NoteConfigurationChanged(); // a domain was saved meanwhile
+            Assert.Null(_scheduler.StartPending());
+            Assert.True(_scheduler.HasPending);
+
+            release.Set();
+            await _runner.LastRun!;
+            _store.SaveVariant(_store.GetVariants(_key).Single(v => v.Culture == Nl) with { BaselineFingerprint = "marked-later" });
+
+            Assert.NotNull(_scheduler.StartPending());
+            await _runner.LastRun!;
+            Assert.Equal("marked-later", _store.GetVariants(_key).Single(v => v.Culture == Nl).BaselineFingerprint);
+            Assert.False(_scheduler.HasPending);
+        }
+
         [Theory]
-        [InlineData("nl-NL", IndexMode.RebuildClearBaselines)]
-        [InlineData("en-US", IndexMode.Rebuild)]
-        [InlineData(null, IndexMode.Rebuild)]
-        public async Task A_configuration_change_asks_for_the_mode_the_default_language_calls_for(string? storedDefault, IndexMode expected)
+        [InlineData("nl-NL", true)]
+        [InlineData("en-US", false)]
+        [InlineData(null, false)]
+        public async Task A_configuration_change_starts_the_rebuild_the_default_language_calls_for(string? storedDefault, bool clears)
         {
             if (storedDefault is not null)
             {
                 _keyValues.Values[Constants.DefaultCultureKey] = storedDefault;
             }
 
-            var (entered, release) = BlockFirstRun();
-            Assert.NotNull(_scheduler.Request(IndexMode.Rebuild));
-            Assert.True(entered.Wait(TimeSpan.FromSeconds(10)));
-
             _scheduler.NoteConfigurationChanged();
-            Assert.True(_scheduler.HasPending);
-            Assert.Null(_scheduler.StartPending()); // a job is running: remembered
-            Assert.Equal(expected, _scheduler.PendingMode);
-
-            release.Set();
+            Assert.NotNull(_scheduler.StartPending());
             await _runner.LastRun!;
+
+            var baseline = _store.GetVariants(_key).Single(v => v.Culture == Nl).BaselineFingerprint;
+            Assert.Equal(clears ? null : "old-baseline", baseline);
         }
     }
 }

@@ -82,21 +82,15 @@ public sealed class RebuildScheduler(
 
     /// <summary>
     /// Starts the remembered rebuild when no job is running any more (here or on another server). A configuration change
-    /// is turned into a rebuild here, with the default language compared at this moment: a changed default language clears
-    /// the baselines, anything else keeps them.
+    /// is turned into a rebuild at the moment it starts, with the default language compared then: a changed default
+    /// language clears the baselines, anything else keeps them. While a job runs the change stays unresolved, because that
+    /// job may be the one that handles the new default language and stores it.
     /// </summary>
     public JobState? StartPending()
     {
         lock (_gate)
         {
-            if (_configurationChanged)
-            {
-                var changed = DefaultCultureChanged(keyValues.GetValue(Constants.DefaultCultureKey), sites.DefaultCulture());
-                Merge(changed ? IndexMode.RebuildClearBaselines : IndexMode.Rebuild, default, SystemUserName);
-                _configurationChanged = false;
-            }
-
-            return _pending is null ? null : StartLocked();
+            return _pending is null && !_configurationChanged ? null : StartLocked();
         }
     }
 
@@ -113,7 +107,19 @@ public sealed class RebuildScheduler(
 
     private JobState? StartLocked()
     {
-        var request = _pending!;
+        var request = _pending;
+        if (_configurationChanged)
+        {
+            var changed = DefaultCultureChanged(keyValues.GetValue(Constants.DefaultCultureKey), sites.DefaultCulture());
+            var mode = changed ? IndexMode.RebuildClearBaselines : IndexMode.Rebuild;
+            request = request is not null && Rank(request.Mode) >= Rank(mode) ? request : new Waiting(mode, default, SystemUserName);
+        }
+
+        if (request is null)
+        {
+            return null;
+        }
+
         var started = runner.TryStart(
             JobKind.Rebuild,
             request.UserKey,
@@ -121,9 +127,11 @@ public sealed class RebuildScheduler(
             (services, progress, cancellationToken) =>
                 services.GetRequiredService<RebuildJob>().RunAsync(request.Mode, progress, cancellationToken));
 
+        // Not started: everything stays as it was (the configuration flag too), for the next try.
         if (started is not null)
         {
             _pending = null;
+            _configurationChanged = false;
         }
 
         return started;

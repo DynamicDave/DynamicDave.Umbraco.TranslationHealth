@@ -89,6 +89,31 @@ public class ReindexProcessorTests
     }
 
     [Fact]
+    public void A_failing_write_puts_the_batch_back_without_retrying_one_by_one()
+    {
+        var keys = new[] { AddDocument(1), AddDocument(2), AddDocument(3) };
+        _queue.Enqueue(keys);
+        var writes = 0;
+        _store.OnSave = () =>
+        {
+            writes++;
+            throw new InvalidOperationException("database is locked");
+        };
+
+        _processor.ProcessPending();
+
+        Assert.Equal(1, writes);
+        Assert.Equal(3, _queue.Count);
+        Assert.Equal("database is locked", JsonSerializer.Deserialize<IndexError>(_keyValues.GetValue(Constants.LastIndexErrorKey)!)!.Message);
+
+        _store.OnSave = null;
+        _processor.ProcessPending();
+
+        Assert.Equal(keys.Order(), _store.Keys.Order());
+        Assert.Equal(string.Empty, _keyValues.GetValue(Constants.LastIndexErrorKey));
+    }
+
+    [Fact]
     public void Nothing_queued_touches_nothing()
     {
         Assert.Equal(0, _processor.ProcessPending());

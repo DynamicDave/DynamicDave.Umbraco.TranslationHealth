@@ -47,6 +47,11 @@ internal sealed class FakeStatusStore : ITranslationStatusStore
 
     public void SaveMany(IReadOnlyList<IndexResult> results, IReadOnlyCollection<Guid> removals)
     {
+        if (results.Count == 0 && removals.Count == 0)
+        {
+            return; // like the real store: no transaction
+        }
+
         OnSave?.Invoke();
         lock (_gate)
         {

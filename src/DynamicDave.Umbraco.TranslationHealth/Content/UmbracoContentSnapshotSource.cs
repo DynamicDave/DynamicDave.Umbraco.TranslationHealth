@@ -164,7 +164,7 @@ public sealed class UmbracoContentSnapshotSource(
         }
 
         var notTrashed = scopeProvider.CreateQuery<IContent>().Where(content => content.Trashed == false);
-        var page = contentService.GetPagedOfTypes(typeIds, pageIndex, pageSize, out total, notTrashed, Ordering.By("path")).ToList();
+        var page = contentService.GetPagedOfTypes(typeIds, pageIndex, pageSize, out total, notTrashed, Ordering.By("id")).ToList();
         return Build(page);
     }
 

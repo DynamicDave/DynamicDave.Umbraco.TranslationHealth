@@ -19,6 +19,7 @@ public class StartupCheckTests
     private readonly RoleAccessor _role = new();
     private readonly JobRunner _runner;
     private readonly StartupCheck _check;
+    private readonly RebuildScheduler _scheduler;
 
     public StartupCheckTests()
     {
@@ -30,10 +31,10 @@ public class StartupCheckTests
         services.AddTransient(_ => new RebuildJob(_source, reindexer, _keyValues, _sites, options, time));
         _runner = new JobRunner(
             _keyValues, services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(), time, new ListLogger<JobRunner>());
-        var scheduler = new RebuildScheduler(_runner, _sites, _keyValues, new ListLogger<RebuildScheduler>());
+        _scheduler = new RebuildScheduler(_runner, _sites, _keyValues, new ListLogger<RebuildScheduler>());
         var (state, control) = FakeRuntimeState.Create();
         _runtime = control;
-        _check = new StartupCheck(state, _role, _sites, _keyValues, options, scheduler, new ListLogger<StartupCheck>());
+        _check = new StartupCheck(state, _role, _sites, _keyValues, options, _scheduler, new ListLogger<StartupCheck>());
     }
 
     [Theory]
@@ -48,6 +49,18 @@ public class StartupCheckTests
 
         Assert.Equal(JobStatus.Completed, _runner.Current()!.Status);
         Assert.Equal(_sites.Default, _keyValues.GetValue(Constants.DefaultCultureKey));
+    }
+
+    [Fact]
+    public async Task Concurrent_runs_request_one_rebuild()
+    {
+        _role.Role = ServerRole.Single;
+
+        await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => Task.Run(_check.Run)));
+        await _runner.LastRun!;
+
+        Assert.False(_scheduler.HasPending);
+        Assert.Equal(1, _source.GetPageCalls);
     }
 
     [Fact]

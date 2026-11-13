@@ -366,12 +366,12 @@ public sealed class JobRunner(IKeyValueService keyValues, IServiceScopeFactory s
 }
 
 /// <summary>
-/// Progress of a running job. <see cref="Report"/> saves at most every 500 ms, and always when the phase changes; the
+/// Progress of a running job. <see cref="Report"/> saves at most every 2 seconds (the dashboard polls that often; every save is a commit), and always when the phase changes; the
 /// job's heartbeat also saves the last reported values. Safe to call from any thread.
 /// </summary>
 public sealed class JobProgress
 {
-    internal static readonly TimeSpan SaveInterval = TimeSpan.FromMilliseconds(500);
+    internal static readonly TimeSpan SaveInterval = TimeSpan.FromSeconds(2);
 
     private readonly TimeProvider _timeProvider;
     private readonly Action<int, int, string> _save;

@@ -28,29 +28,47 @@ public sealed class ReindexProcessor(
             }
 
             handled += batch.Count;
-            ProcessBatch(batch);
+            if (!ProcessBatch(batch))
+            {
+                break; // the write failed and the batch is queued again: wait for the next tick
+            }
         }
 
         return handled;
     }
 
-    // One write per batch. When it fails, the documents are tried one by one, so one failing document does not stop the
-    // others; the last failure is kept for the overview.
-    private void ProcessBatch(IReadOnlyList<(Guid Key, bool Remove)> batch)
+    // One write per batch. When reading or computing fails, the documents are tried one by one, so one failing document
+    // does not stop the others. When the write itself fails the batch goes back in the queue for a later tick: retrying
+    // one by one would multiply the commits exactly when the database is busy.
+    private bool ProcessBatch(IReadOnlyList<(Guid Key, bool Remove)> batch)
     {
         string? error = null;
+        var requeued = false;
         try
         {
             reindexer.IndexBatch(batch, IndexMode.Save);
         }
+        catch (IndexWriteException ex)
+        {
+            logger.LogError(ex, "Translation health could not write the status of {Count} documents; they are queued again", batch.Count);
+            queue.Requeue(batch);
+            requeued = true;
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
         catch (Exception batchException)
         {
-            logger.LogWarning(batchException, "Translation health could not update a batch of {Count} documents; trying them one by one", batch.Count);
+            logger.LogWarning(batchException, "Translation health could not read a batch of {Count} documents; trying them one by one", batch.Count);
             foreach (var item in batch)
             {
                 try
                 {
                     reindexer.IndexBatch([item], IndexMode.Save);
+                }
+                catch (IndexWriteException ex)
+                {
+                    queue.Requeue([item]);
+                    requeued = true;
+                    error = ex.InnerException?.Message ?? ex.Message;
                 }
                 catch (Exception ex)
                 {
@@ -77,5 +95,7 @@ public sealed class ReindexProcessor(
         {
             logger.LogWarning(ex, "Translation health could not store the state of its last update");
         }
+
+        return !requeued;
     }
 }

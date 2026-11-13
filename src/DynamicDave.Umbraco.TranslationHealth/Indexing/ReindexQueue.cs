@@ -52,6 +52,22 @@ public sealed class ReindexQueue
         return batch;
     }
 
+    /// <summary>Puts keys back after a failed write; a key that was queued again meanwhile keeps its newer request.</summary>
+    public void Requeue(IEnumerable<(Guid Key, bool Remove)> items)
+    {
+        lock (_gate)
+        {
+            foreach (var (key, remove) in items)
+            {
+                _enqueued++;
+                if (_pending.TryAdd(key, remove))
+                {
+                    _order.Enqueue(key);
+                }
+            }
+        }
+    }
+
     private void Add(IEnumerable<Guid> keys, bool remove)
     {
         lock (_gate)

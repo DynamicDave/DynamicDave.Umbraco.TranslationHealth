@@ -26,6 +26,7 @@ public sealed class StartupCheck(
     RebuildScheduler scheduler,
     ILogger<StartupCheck> logger)
 {
+    private readonly object _gate = new();
     private volatile bool _done;
 
     private const int MaxAttempts = 5;
@@ -49,6 +50,15 @@ public sealed class StartupCheck(
 
     /// <summary>Does the check once, as soon as the runtime runs and the role of this server is known; later calls do nothing.</summary>
     public void Run()
+    {
+        // The notification handler and the worker can call this at the same moment.
+        lock (_gate)
+        {
+            RunLocked();
+        }
+    }
+
+    private void RunLocked()
     {
         if (_done || runtimeState.Level != RuntimeLevel.Run)
         {

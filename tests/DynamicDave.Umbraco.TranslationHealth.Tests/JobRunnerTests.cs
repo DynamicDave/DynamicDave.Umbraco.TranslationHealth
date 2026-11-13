@@ -283,7 +283,7 @@ public class JobRunnerTests
         var release = new TaskCompletionSource();
         _runner.TryStart(JobKind.Rebuild, UserKey, "Dave", async (_, progress, _) =>
         {
-            _time.Advance(TimeSpan.FromSeconds(1));
+            _time.Advance(JobProgress.SaveInterval);
             progress.Report(4, 8, JobPhases.Indexing);
             reported.SetResult();
             await release.Task;
@@ -294,24 +294,24 @@ public class JobRunnerTests
         var running = _runner.Current()!;
         Assert.Equal(JobStatus.Running, running.Status);
         Assert.Equal((4, 8, JobPhases.Indexing), (running.Done, running.Total, running.Phase));
-        Assert.Equal(Start.UtcDateTime.AddSeconds(1), running.HeartbeatUtc);
+        Assert.Equal(Start.UtcDateTime.Add(JobProgress.SaveInterval), running.HeartbeatUtc);
 
         release.SetResult();
         await _runner.LastRun!;
     }
 
     [Fact]
-    public void Report_saves_at_most_every_500_ms_and_always_on_phase_change()
+    public void Report_saves_at_most_every_2_seconds_and_always_on_phase_change()
     {
         var saves = new List<(int Done, int Total, string Phase)>();
         var progress = new JobProgress(_time, (done, total, phase) => saves.Add((done, total, phase)));
 
         progress.Report(1, 10, JobPhases.Indexing);
         progress.Report(2, 10, JobPhases.Indexing);
-        _time.Advance(TimeSpan.FromMilliseconds(499));
+        _time.Advance(JobProgress.SaveInterval - TimeSpan.FromMilliseconds(1));
         progress.Report(3, 10, JobPhases.Indexing);
         progress.Report(0, 4, JobPhases.RemovingOrphans);
-        _time.Advance(TimeSpan.FromMilliseconds(500));
+        _time.Advance(JobProgress.SaveInterval);
         progress.Report(1, 4, JobPhases.RemovingOrphans);
 
         Assert.Equal([(1, 10, JobPhases.Indexing), (0, 4, JobPhases.RemovingOrphans), (1, 4, JobPhases.RemovingOrphans)], saves);
@@ -343,7 +343,7 @@ public class JobRunnerTests
             await cancelRequested.Task;
 
             // The next progress write sees the request and cancels the token.
-            _time.Advance(TimeSpan.FromSeconds(1));
+            _time.Advance(JobProgress.SaveInterval);
             progress.Report(2, 10, JobPhases.Indexing);
             await Task.Delay(Timeout.Infinite, ct);
             return (null, null, null);
