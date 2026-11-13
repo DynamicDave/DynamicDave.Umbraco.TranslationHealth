@@ -157,6 +157,7 @@ internal static class OverviewSql
         }
 
         var culture = string.IsNullOrWhiteSpace(filter.Culture) ? null : filter.Culture;
+        // Without a culture each clause below means "any culture" on its own: Status and OnlyIssues may match different languages.
         if (filter.Status is { } status)
         {
             parts.Add(Exists(status, culture, args));
