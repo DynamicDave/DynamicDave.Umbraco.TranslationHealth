@@ -1,6 +1,7 @@
 using DynamicDave.Umbraco.TranslationHealth.Content;
 using DynamicDave.Umbraco.TranslationHealth.Indexing;
 using DynamicDave.Umbraco.TranslationHealth.Jobs;
+using DynamicDave.Umbraco.TranslationHealth.Overview;
 using DynamicDave.Umbraco.TranslationHealth.Persistence;
 using DynamicDave.Umbraco.TranslationHealth.Sites;
 using Microsoft.Extensions.Configuration;
@@ -24,6 +25,9 @@ public class TranslationHealthComposer : IComposer
         builder.Services.AddSingleton<ITranslationStatusStore, TranslationStatusStore>();
         builder.Services.AddSingleton<IImportHistory, ImportHistory>();
         builder.Services.AddSingleton<TempStore>();
+
+        builder.Services.AddSingleton<OverviewQuery>();
+        builder.Services.AddTransient<BreadcrumbResolver>();
 
         builder.Services.AddSingleton<ISiteSource, UmbracoSiteSource>();
         builder.Services.AddSingleton<IContentSnapshotSource, UmbracoContentSnapshotSource>();
