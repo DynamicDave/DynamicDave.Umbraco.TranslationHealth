@@ -173,4 +173,33 @@ public class BlockValueReaderTests
     {
         Assert.Empty(BlockValueReader.CultureValues(null, "en-US"));
     }
+
+    [Theory]
+    [InlineData("null", true)]
+    [InlineData("null", false)]
+    [InlineData("{\"contentData\":[],\"settingsData\":[],\"expose\":[],\"layout\":{}}", true)]
+    [InlineData("{\"contentData\":[],\"settingsData\":[],\"expose\":[],\"layout\":{}}", false)]
+    public void Reads_rich_text_markup_inside_a_block(string blocks, bool asString)
+    {
+        var rich = "{\"markup\":\"<p>Hi</p>\",\"blocks\":" + blocks + "}";
+        var value = asString ? JsonSerializer.Serialize(rich) : rich;
+        var json = List(Block(Key1, Entry("body", "en-US", value), Entry("body", "nl-NL", value)));
+
+        var values = BlockValueReader.CultureValues(json, "en-US");
+
+        Assert.Equal([($"{Key1}/body", "<p>Hi</p>")], values);
+    }
+
+    [Fact]
+    public void Rich_text_inside_a_block_also_reads_its_own_blocks()
+    {
+        const string innerKey = "f3e7e86e-0000-4000-8000-000000000003";
+        var innerBlocks = List(Block(innerKey, Entry("headline", "en-US", "\"Deep\"")));
+        var rich = "{\"markup\":\"<p>Hi</p>\",\"blocks\":" + innerBlocks + "}";
+        var json = List(Block(Key1, Entry("body", "en-US", JsonSerializer.Serialize(rich))));
+
+        var values = BlockValueReader.CultureValues(json, "en-US");
+
+        Assert.Equal([($"{Key1}/body", "<p>Hi</p>"), ($"{innerKey}/headline", "Deep")], values);
+    }
 }
