@@ -44,6 +44,7 @@ public class TranslationHealthComposer : IComposer
         builder.Services.AddSingleton<Reindexer>();
         builder.Services.AddSingleton<ReindexProcessor>();
         builder.Services.AddSingleton<QuietGate>();
+        builder.Services.AddSingleton<EditorActivity>();
         builder.Services.AddSingleton<StartupCheck>();
         builder.Services.AddHostedService<ReindexWorker>();
 
@@ -53,6 +54,14 @@ public class TranslationHealthComposer : IComposer
         builder.Services.AddTransient<RebuildJob>();
 
         builder
+            .AddNotificationHandler<ContentSavingNotification, ContentChangeHandlers>()
+            .AddNotificationHandler<ContentPublishingNotification, ContentChangeHandlers>()
+            .AddNotificationHandler<ContentUnpublishingNotification, ContentChangeHandlers>()
+            .AddNotificationHandler<ContentMovingNotification, ContentChangeHandlers>()
+            .AddNotificationHandler<ContentMovingToRecycleBinNotification, ContentChangeHandlers>()
+            .AddNotificationHandler<ContentDeletingNotification, ContentChangeHandlers>()
+            .AddNotificationHandler<ContentSortingNotification, ContentChangeHandlers>()
+            .AddNotificationHandler<ContentCopyingNotification, ContentChangeHandlers>()
             .AddNotificationHandler<ContentSavedNotification, ContentChangeHandlers>()
             .AddNotificationHandler<ContentPublishedNotification, ContentChangeHandlers>()
             .AddNotificationHandler<ContentUnpublishedNotification, ContentChangeHandlers>()

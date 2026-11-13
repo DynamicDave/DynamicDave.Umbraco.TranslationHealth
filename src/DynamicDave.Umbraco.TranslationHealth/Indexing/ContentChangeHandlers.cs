@@ -20,7 +20,16 @@ public sealed class ContentChangeHandlers(
     ISiteSource sites,
     RebuildScheduler scheduler,
     IRuntimeState runtimeState,
-    ILogger<ContentChangeHandlers> logger) :
+    ILogger<ContentChangeHandlers> logger,
+    EditorActivity? activity = null) :
+    INotificationHandler<ContentSavingNotification>,
+    INotificationHandler<ContentPublishingNotification>,
+    INotificationHandler<ContentUnpublishingNotification>,
+    INotificationHandler<ContentMovingNotification>,
+    INotificationHandler<ContentMovingToRecycleBinNotification>,
+    INotificationHandler<ContentDeletingNotification>,
+    INotificationHandler<ContentSortingNotification>,
+    INotificationHandler<ContentCopyingNotification>,
     INotificationHandler<ContentSavedNotification>,
     INotificationHandler<ContentPublishedNotification>,
     INotificationHandler<ContentUnpublishedNotification>,
@@ -35,8 +44,29 @@ public sealed class ContentChangeHandlers(
     INotificationHandler<LanguageDeletedNotification>,
     INotificationHandler<ContentTypeChangedNotification>
 {
+    // The "ing" notifications start before the save's transaction and only mark the time of the change (memory, no
+    // database), so the rebuild's write window stays clear of the whole save, including Umbraco's own handlers after it.
+    public void Handle(ContentSavingNotification notification) => activity?.Mark();
+
+    public void Handle(ContentPublishingNotification notification) => activity?.Mark();
+
+    public void Handle(ContentUnpublishingNotification notification) => activity?.Mark();
+
+    public void Handle(ContentMovingNotification notification) => activity?.Mark();
+
+    public void Handle(ContentMovingToRecycleBinNotification notification) => activity?.Mark();
+
+    public void Handle(ContentDeletingNotification notification) => activity?.Mark();
+
+    public void Handle(ContentSortingNotification notification) => activity?.Mark();
+
+    public void Handle(ContentCopyingNotification notification) => activity?.Mark();
+
     public void Handle(ContentSavedNotification notification)
-        => Safe(() => queue.Enqueue(notification.SavedEntities.Select(content => content.Key)), notification);
+    {
+        activity?.Mark();
+        Safe(() => queue.Enqueue(notification.SavedEntities.Select(content => content.Key)), notification);
+    }
 
     public void Handle(ContentPublishedNotification notification)
         => Safe(() => queue.Enqueue(notification.PublishedEntities.Select(content => content.Key)), notification);
@@ -109,6 +139,7 @@ public sealed class ContentChangeHandlers(
     {
         try
         {
+            activity?.Mark();
             action();
         }
         catch (Exception ex)

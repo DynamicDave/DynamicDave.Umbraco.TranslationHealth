@@ -14,7 +14,8 @@ namespace DynamicDave.Umbraco.TranslationHealth.Jobs;
 /// <summary>
 /// Re-indexes every culture-variant document, then removes the rows of documents that no longer qualify. A rebuild keeps
 /// existing baselines and marks (<see cref="IndexMode.Rebuild"/>) unless the default language changed
-/// (<see cref="IndexMode.RebuildClearBaselines"/>). Documents indexed by the worker while it runs are left alone.
+/// (<see cref="IndexMode.RebuildClearBaselines"/>). Documents indexed by the worker while it runs are left alone. Before each
+/// write it waits for editors to pause (<see cref="EditorActivity"/>), at most 30 seconds.
 /// </summary>
 public sealed class RebuildJob(
     IContentSnapshotSource snapshots,
@@ -22,7 +23,8 @@ public sealed class RebuildJob(
     IKeyValueService keyValues,
     ISiteSource sites,
     IOptionsMonitor<TranslationHealthOptions> options,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    EditorActivity? activity = null)
 {
     public const int PageSize = 200;
 
@@ -56,6 +58,7 @@ public sealed class RebuildJob(
             cancellationToken.ThrowIfCancellationRequested();
             var documents = snapshots.GetPage(page, PageSize, out var total);
             seen.UnionWith(documents.Select(document => document.Key));
+            activity?.WaitUntilQuiet(cancellationToken);
             reindexer.IndexPage(documents, mode);
             progress.Report(seen.Count, (int)Math.Max(total, seen.Count), JobPhases.Indexing);
             if (documents.Count < PageSize || (page + 1) * PageSize >= total)
@@ -68,6 +71,7 @@ public sealed class RebuildJob(
         // when others move meanwhile, so the rows of unseen documents are checked again, not just deleted.
         cancellationToken.ThrowIfCancellationRequested();
         progress.Report(seen.Count, seen.Count, JobPhases.RemovingOrphans);
+        activity?.WaitUntilQuiet(cancellationToken);
         reindexer.RemoveOrphans(seen, tracking, mode);
 
         keyValues.SetValue(Constants.DefaultCultureKey, defaultCulture);

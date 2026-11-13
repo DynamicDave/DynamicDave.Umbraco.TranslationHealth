@@ -60,6 +60,24 @@ public class RebuildJobTests
             BaselineSource.Saved, null, null, T0);
 
     [Fact]
+    public async Task Every_batch_waits_for_editors_to_pause_before_it_writes()
+    {
+        AddDocuments(450);
+        var order = new List<string>();
+        var activity = new EditorActivity(_time, by => { order.Add("wait"); _time.Advance(by); });
+        _store.OnSave = () => order.Add("write");
+        var job = new RebuildJob(_source, _reindexer, _keyValues, _sites, _options, _time, activity);
+        activity.Mark();
+
+        await job.RunAsync(IndexMode.Rebuild, NoProgress, CancellationToken.None);
+
+        // The first batch had to wait for the quiet window (editing just happened), the later ones found it quiet.
+        Assert.Equal("wait", order[0]);
+        Assert.Equal(3, order.Count(o => o == "write"));
+        Assert.True(order.IndexOf("wait") < order.IndexOf("write"));
+    }
+
+    [Fact]
     public async Task Rebuild_indexes_all_documents_and_removes_orphans()
     {
         var keys = AddDocuments(450);
