@@ -16,6 +16,8 @@ namespace TestSite.Seeding;
 /// Seeds the translation health test data: four languages (en-US default, nl-NL, de-DE, fr-FR), the sites "Corporate"
 /// (en/nl/de domains), "Webshop" (de/fr domains, no en-US) and "Plain" (no domains), 66 pages each in a mix of
 /// translation states, and a dictionary tree. Set TH_SEED_LARGE to a number to add an extra root "Load" with that many pages.
+/// On SQLite that works up to a few hundred pages; beyond about 1,500 saves in a row Umbraco's own saves stall (reproduced
+/// without this package), so build a large database by cloning rows of the seeded pages instead.
 /// </summary>
 public class TestSiteSeeder(
     IRuntimeState runtimeState,
