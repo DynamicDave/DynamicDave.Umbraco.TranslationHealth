@@ -202,4 +202,20 @@ public class BlockValueReaderTests
 
         Assert.Equal([($"{Key1}/body", "<p>Hi</p>"), ($"{innerKey}/headline", "Deep")], values);
     }
+
+    [Fact]
+    public void Include_invariant_also_emits_entries_without_culture()
+    {
+        var json = List(Block(Key1,
+            Entry("note", null, "\"Same in every language\""),
+            Entry("headline", "en-US", "\"Hello\""),
+            Entry("headline", "nl-NL", "\"Hallo\"")));
+
+        Assert.Equal(
+            [($"{Key1}/note", "Same in every language"), ($"{Key1}/headline", "Hello")],
+            BlockValueReader.CultureValues(json, "en-US", includeInvariant: true));
+        Assert.Equal(
+            [($"{Key1}/headline", "Hello")],
+            BlockValueReader.CultureValues(json, "en-US"));
+    }
 }

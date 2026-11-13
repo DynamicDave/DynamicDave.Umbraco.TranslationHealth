@@ -7,11 +7,15 @@ namespace DynamicDave.Umbraco.TranslationHealth.Content;
 /// Extracts the values of one culture from stored block JSON (Block List, Block Grid, rich text with blocks).
 /// Only <c>contentData</c> / <c>settingsData</c> are read; <c>layout</c> and <c>expose</c> are ignored on purpose.
 /// </summary>
+/// <remarks>
+/// With <c>includeInvariant</c> the entries without a culture are emitted as well: use it for a culture-variant property,
+/// whose whole value belongs to one culture (element types without culture variance store every value with a null culture).
+/// </remarks>
 public static class BlockValueReader
 {
     private const int MaxDepth = 16;
 
-    public static IReadOnlyList<(string Path, string Value)> CultureValues(string? json, string culture)
+    public static IReadOnlyList<(string Path, string Value)> CultureValues(string? json, string culture, bool includeInvariant = false)
     {
         var result = new List<(string Path, string Value)>();
         if (string.IsNullOrWhiteSpace(json))
@@ -22,7 +26,7 @@ public static class BlockValueReader
         try
         {
             using var document = JsonDocument.Parse(json);
-            ReadBlockValue(document.RootElement, culture, result, 0);
+            ReadBlockValue(document.RootElement, culture, includeInvariant, result, 0);
         }
         catch (JsonException)
         {
@@ -33,7 +37,7 @@ public static class BlockValueReader
     }
 
     // Reads an object that is a block value itself (contentData/settingsData) or a rich text value (blocks.*).
-    private static bool ReadBlockValue(JsonElement element, string culture, List<(string, string)> result, int depth)
+    private static bool ReadBlockValue(JsonElement element, string culture, bool includeInvariant, List<(string, string)> result, int depth)
     {
         if (element.ValueKind != JsonValueKind.Object || depth > MaxDepth)
         {
@@ -42,7 +46,7 @@ public static class BlockValueReader
 
         if (element.TryGetProperty("blocks", out var blocks) && blocks.ValueKind == JsonValueKind.Object)
         {
-            ReadBlockValue(blocks, culture, result, depth + 1);
+            ReadBlockValue(blocks, culture, includeInvariant, result, depth + 1);
             return true;
         }
 
@@ -54,7 +58,7 @@ public static class BlockValueReader
                 found = true;
                 foreach (var block in list.EnumerateArray())
                 {
-                    ReadBlock(block, culture, result, depth);
+                    ReadBlock(block, culture, includeInvariant, result, depth);
                 }
             }
         }
@@ -62,7 +66,7 @@ public static class BlockValueReader
         return found;
     }
 
-    private static void ReadBlock(JsonElement block, string culture, List<(string, string)> result, int depth)
+    private static void ReadBlock(JsonElement block, string culture, bool includeInvariant, List<(string, string)> result, int depth)
     {
         if (block.ValueKind != JsonValueKind.Object
             || !block.TryGetProperty("values", out var values)
@@ -82,7 +86,7 @@ public static class BlockValueReader
                 continue;
             }
 
-            // Invariant entries carry no text of their own, but may hold nested blocks with culture values.
+            // Invariant entries carry no text of their own (unless includeInvariant), but may hold nested blocks with culture values.
             var entryCulture = entry.TryGetProperty("culture", out var cultureElement) && cultureElement.ValueKind == JsonValueKind.String
                 ? cultureElement.GetString()
                 : null;
@@ -96,11 +100,11 @@ public static class BlockValueReader
                 ? aliasElement.GetString() ?? string.Empty
                 : string.Empty;
 
-            AddValue(value, $"{key}/{alias}", culture, matches, result, depth);
+            AddValue(value, $"{key}/{alias}", culture, includeInvariant, matches || (entryCulture is null && includeInvariant), result, depth);
         }
     }
 
-    private static void AddValue(JsonElement value, string path, string culture, bool emit, List<(string, string)> result, int depth)
+    private static void AddValue(JsonElement value, string path, string culture, bool includeInvariant, bool emit, List<(string, string)> result, int depth)
     {
         switch (value.ValueKind)
         {
@@ -111,7 +115,7 @@ public static class BlockValueReader
                     return;
                 }
 
-                if (TryReadNested(text, path, culture, emit, result, depth))
+                if (TryReadNested(text, path, culture, includeInvariant, emit, result, depth))
                 {
                     return;
                 }
@@ -124,9 +128,9 @@ public static class BlockValueReader
                 break;
             case JsonValueKind.Object:
                 // A nested block value written as an object; anything else is not translatable text.
-                if (!TryReadRichText(value, path, culture, emit, result, depth + 1))
+                if (!TryReadRichText(value, path, culture, includeInvariant, emit, result, depth + 1))
                 {
-                    ReadBlockValue(value, culture, result, depth + 1);
+                    ReadBlockValue(value, culture, includeInvariant, result, depth + 1);
                 }
 
                 break;
@@ -143,7 +147,7 @@ public static class BlockValueReader
     }
 
     // A string that parses to a block value is the double-encoded form Umbraco writes for nested blocks.
-    private static bool TryReadNested(string text, string path, string culture, bool emit, List<(string, string)> result, int depth)
+    private static bool TryReadNested(string text, string path, string culture, bool includeInvariant, bool emit, List<(string, string)> result, int depth)
     {
         var trimmed = text.AsSpan().TrimStart();
         if (trimmed.IsEmpty || trimmed[0] != '{' || depth > MaxDepth)
@@ -155,8 +159,8 @@ public static class BlockValueReader
         {
             using var nested = JsonDocument.Parse(text);
             var inner = new List<(string, string)>();
-            if (!TryReadRichText(nested.RootElement, path, culture, emit, inner, depth + 1)
-                && !ReadBlockValue(nested.RootElement, culture, inner, depth + 1))
+            if (!TryReadRichText(nested.RootElement, path, culture, includeInvariant, emit, inner, depth + 1)
+                && !ReadBlockValue(nested.RootElement, culture, includeInvariant, inner, depth + 1))
             {
                 return false;
             }
@@ -171,7 +175,7 @@ public static class BlockValueReader
     }
 
     // A rich text value inside a block: emit its markup (when the entry matches the culture), then read its blocks.
-    private static bool TryReadRichText(JsonElement element, string path, string culture, bool emit, List<(string, string)> result, int depth)
+    private static bool TryReadRichText(JsonElement element, string path, string culture, bool includeInvariant, bool emit, List<(string, string)> result, int depth)
     {
         if (element.ValueKind != JsonValueKind.Object
             || depth > MaxDepth
@@ -189,7 +193,7 @@ public static class BlockValueReader
 
         if (element.TryGetProperty("blocks", out var blocks))
         {
-            ReadBlockValue(blocks, culture, result, depth + 1);
+            ReadBlockValue(blocks, culture, includeInvariant, result, depth + 1);
         }
 
         return true;
