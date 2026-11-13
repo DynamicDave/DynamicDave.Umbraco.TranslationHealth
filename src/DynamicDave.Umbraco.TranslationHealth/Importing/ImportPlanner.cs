@@ -39,7 +39,7 @@ public static class ImportPlanner
                 && file.Format == ImportFileFormat.Xliff
                 && fileSource is not null
                 && !string.Equals(NormalizeLineEndings(fileSource), NormalizeLineEndings(currentSource ?? string.Empty), StringComparison.Ordinal);
-            var selected = outcome is ImportOutcome.NewValue or ImportOutcome.Overwrite or ImportOutcome.NewKey && !sourceChanged;
+            var selected = (outcome is ImportOutcome.NewValue or ImportOutcome.Overwrite or ImportOutcome.NewKey) && !sourceChanged;
             items.Add(new PlanItem(items.Count + 1, row.RowNumber, key, culture, outcome, reason, currentValue, newValue,
                 fileSource, currentSource, sourceChanged, selected));
         }
