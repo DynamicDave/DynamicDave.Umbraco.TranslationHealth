@@ -27,7 +27,7 @@ public static class CsvParser
     /// </summary>
     public static IReadOnlyList<string[]> Read(string text)
     {
-        if (text.Length > 0 && text[0] == '﻿')
+        if (text.Length > 0 && text[0] == (char)0xFEFF)
         {
             text = text[1..];
         }

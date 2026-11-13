@@ -61,6 +61,34 @@ public class DictionaryXliffTests
     }
 
     [Fact]
+    public void Multiline_values_round_trip_with_their_line_endings()
+    {
+        var value = "a\r\nb\nc\rd";
+        var bytes = DictionaryXliff.Write([Entry("k", ("en-US", "x\r\ny"), ("nl-NL", value))], "en-US", "nl-NL");
+
+        var row = Assert.Single(DictionaryXliff.Read(new MemoryStream(bytes), Installed).Rows);
+
+        Assert.Equal(value, row.Values["nl-NL"]);
+        Assert.Equal("x\r\ny", row.Sources!["en-US"]);
+    }
+
+    [Fact]
+    public void Deeply_nested_input_is_unreadable_and_does_not_overflow_the_stack()
+    {
+        const int depth = 50_000;
+        var xml = Xliff("<trans-unit id=\"1\" resname=\"k\"><source>a</source><target>" +
+                        string.Concat(Enumerable.Repeat("<g id=\"1\">", depth)) + "x" + string.Concat(Enumerable.Repeat("</g>", depth)) +
+                        "</target></trans-unit>");
+
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var file = Read(xml);
+        watch.Stop();
+
+        Assert.Equal(ImportFileError.Unreadable, file.Error);
+        Assert.True(watch.ElapsedMilliseconds < 2000, $"took {watch.ElapsedMilliseconds} ms");
+    }
+
+    [Fact]
     public void Reads_target_with_inline_elements_as_text()
     {
         var file = Read(Xliff("<trans-unit id=\"1\" resname=\"k\"><source>Hi there</source><target>Hi <g id=\"1\">there</g></target></trans-unit>"));

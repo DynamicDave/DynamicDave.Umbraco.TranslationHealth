@@ -122,6 +122,20 @@ public class DictionaryCsvTests
         Assert.Equal("café €5", Assert.Single(file.Rows).Values["nl-NL"]);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Reads_utf16_with_bom(bool bigEndian)
+    {
+        var encoding = bigEndian ? Encoding.BigEndianUnicode : Encoding.Unicode;
+        var bytes = encoding.GetPreamble().Concat(encoding.GetBytes("Key\tnl-NL\r\nk\tcafé €\r\n")).ToArray();
+
+        var file = Read(bytes);
+
+        Assert.Null(file.Error);
+        Assert.Equal("café €", Assert.Single(file.Rows).Values["nl-NL"]);
+    }
+
     [Fact]
     public void Reads_utf8_without_bom()
     {

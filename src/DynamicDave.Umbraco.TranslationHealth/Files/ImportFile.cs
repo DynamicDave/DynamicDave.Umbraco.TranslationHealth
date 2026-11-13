@@ -49,9 +49,20 @@ internal static class ImportStreams
         return buffer.ToArray();
     }
 
-    /// <summary>UTF-8 (BOM optional); invalid UTF-8 falls back to Windows-1252 (Excel "CSV (lijstscheidingsteken)" on Dutch Windows).</summary>
+    /// <summary>UTF-16 (BOM required), UTF-8 (BOM optional); invalid UTF-8 falls back to Windows-1252 (Excel "CSV (lijstscheidingsteken)" on Dutch Windows).</summary>
     public static string Decode(byte[] bytes)
     {
+        // UTF-16 with BOM (Excel "Unicode Text").
+        if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
+        {
+            return Encoding.Unicode.GetString(bytes, 2, bytes.Length - 2);
+        }
+
+        if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
+        {
+            return Encoding.BigEndianUnicode.GetString(bytes, 2, bytes.Length - 2);
+        }
+
         try
         {
             return new UTF8Encoding(false, true).GetString(bytes);

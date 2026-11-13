@@ -7,8 +7,13 @@ namespace DynamicDave.Umbraco.TranslationHealth.Files;
 
 public static class DictionaryXliff
 {
+    // Real XLIFF nests a few levels (xliff/file/body/group/trans-unit/target/inline); anything deeper is refused.
+    private const int MaxDepth = 32;
+
     private static readonly XNamespace Ns = "urn:oasis:names:tc:xliff:document:1.2";
     private static readonly XNamespace XmlNs = XNamespace.Xml;
+
+    private sealed record RawUnit(string Key, string? Target, string? Source);
 
     public static byte[] Write(IReadOnlyList<DictionaryEntry> entries, string sourceCulture, string targetCulture)
     {
@@ -37,7 +42,9 @@ public static class DictionaryXliff
                     body)));
 
         using var stream = new MemoryStream();
-        using (var writer = XmlWriter.Create(stream, new XmlWriterSettings { Encoding = new UTF8Encoding(false), Indent = true }))
+        // Entitize keeps a carriage return as &#xD; so line endings survive the round trip.
+        var settings = new XmlWriterSettings { Encoding = new UTF8Encoding(false), Indent = true, NewLineHandling = NewLineHandling.Entitize };
+        using (var writer = XmlWriter.Create(stream, settings))
         {
             document.Save(writer);
         }
@@ -56,14 +63,9 @@ public static class DictionaryXliff
             }
 
             var settings = new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null };
-            XDocument document;
-            using (var stream = new MemoryStream(bytes))
-            using (var reader = XmlReader.Create(stream, settings))
-            {
-                document = XDocument.Load(reader);
-            }
-
-            return Parse(document, installedCultures, maxRows);
+            using var stream = new MemoryStream(bytes);
+            using var reader = XmlReader.Create(stream, settings);
+            return Parse(reader, installedCultures, maxRows);
         }
         catch (Exception ex) when (ex is XmlException or IOException or NotSupportedException or ObjectDisposedException or InvalidOperationException)
         {
@@ -71,72 +73,152 @@ public static class DictionaryXliff
         }
     }
 
-    private static ImportFile Parse(XDocument document, IReadOnlyCollection<string> installedCultures, int maxRows)
+    // Streams the document with the reader (no element tree), so deeply nested input cannot overflow the stack.
+    private static ImportFile Parse(XmlReader reader, IReadOnlyCollection<string> installedCultures, int maxRows)
     {
-        var root = document.Root;
-        if (root is null || root.Name.LocalName != "xliff" || (string?)root.Attribute("version") != "1.2")
+        var files = new List<(string Target, string Source)>();
+        var units = new List<RawUnit>();
+        var sawRoot = false;
+        while (reader.Read())
+        {
+            CheckDepth(reader);
+            if (reader.NodeType != XmlNodeType.Element)
+            {
+                continue;
+            }
+
+            if (reader.Depth == 0)
+            {
+                if (reader.LocalName != "xliff" || reader.GetAttribute("version") != "1.2")
+                {
+                    return ImportFile.Failed(ImportFileFormat.Xliff, ImportFileError.Unreadable);
+                }
+
+                sawRoot = true;
+            }
+            else if (reader.LocalName == "file")
+            {
+                files.Add(((reader.GetAttribute("target-language") ?? string.Empty).Trim(), (reader.GetAttribute("source-language") ?? string.Empty).Trim()));
+            }
+            else if (reader.LocalName == "trans-unit")
+            {
+                var unit = ReadUnit(reader);
+                if (unit is not null)
+                {
+                    units.Add(unit);
+                    if (units.Count > maxRows)
+                    {
+                        return ImportFile.Failed(ImportFileFormat.Xliff, ImportFileError.TooManyRows);
+                    }
+                }
+            }
+        }
+
+        if (!sawRoot || files.Count == 0 || files.Select(f => f.Target).Distinct(StringComparer.OrdinalIgnoreCase).Count() != 1)
         {
             return ImportFile.Failed(ImportFileFormat.Xliff, ImportFileError.Unreadable);
         }
 
-        var files = root.Elements().Where(e => e.Name.LocalName == "file").ToList();
-        if (files.Count == 0)
-        {
-            return ImportFile.Failed(ImportFileFormat.Xliff, ImportFileError.Unreadable);
-        }
-
-        var targets = files.Select(f => ((string?)f.Attribute("target-language"))?.Trim() ?? string.Empty).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        if (targets.Count != 1)
-        {
-            return ImportFile.Failed(ImportFileFormat.Xliff, ImportFileError.Unreadable);
-        }
-
-        var target = installedCultures.FirstOrDefault(c => string.Equals(c, targets[0], StringComparison.OrdinalIgnoreCase));
+        var target = installedCultures.FirstOrDefault(c => string.Equals(c, files[0].Target, StringComparison.OrdinalIgnoreCase));
         if (target is null)
         {
             return ImportFile.Failed(ImportFileFormat.Xliff, ImportFileError.UnknownTargetLanguage);
         }
 
-        var sourceName = ((string?)files[0].Attribute("source-language"))?.Trim() ?? string.Empty;
+        var sourceName = files[0].Source;
         var sourceCulture = installedCultures.FirstOrDefault(c => string.Equals(c, sourceName, StringComparison.OrdinalIgnoreCase)) ?? sourceName;
-
-        var units = files.SelectMany(f => f.Descendants().Where(e => e.Name.LocalName == "trans-unit")).ToList();
-        if (units.Count > maxRows)
-        {
-            return ImportFile.Failed(ImportFileFormat.Xliff, ImportFileError.TooManyRows);
-        }
 
         var rows = new List<ImportRow>(units.Count);
         for (var i = 0; i < units.Count; i++)
         {
             var unit = units[i];
-            var resname = ((string?)unit.Attribute("resname"))?.Trim();
-            var id = ((string?)unit.Attribute("id"))?.Trim();
-            var key = !string.IsNullOrEmpty(resname) ? resname : !string.IsNullOrEmpty(id) ? "id:" + id : null;
-            if (key is null)
-            {
-                continue;
-            }
-
-            // XElement.Value flattens inline elements (g, x, bpt ...) to their text.
-            var targetText = unit.Elements().FirstOrDefault(e => e.Name.LocalName == "target")?.Value;
-            var sourceText = unit.Elements().FirstOrDefault(e => e.Name.LocalName == "source")?.Value;
             var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            if (!string.IsNullOrWhiteSpace(targetText))
+            if (!string.IsNullOrWhiteSpace(unit.Target))
             {
-                values[target] = targetText;
+                values[target] = unit.Target;
             }
 
             var sources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            if (sourceName.Length > 0 && !string.IsNullOrWhiteSpace(sourceText))
+            if (sourceName.Length > 0 && !string.IsNullOrWhiteSpace(unit.Source))
             {
-                sources[sourceCulture] = sourceText;
+                sources[sourceCulture] = unit.Source;
             }
 
-            rows.Add(new ImportRow(i + 1, key, values, sources));
+            rows.Add(new ImportRow(i + 1, unit.Key, values, sources));
         }
 
         return new ImportFile(ImportFileFormat.Xliff, rows, [], target, null);
+    }
+
+    // Positioned on a trans-unit start element; leaves the reader on its end element.
+    private static RawUnit? ReadUnit(XmlReader reader)
+    {
+        var resname = reader.GetAttribute("resname")?.Trim();
+        var id = reader.GetAttribute("id")?.Trim();
+        var key = !string.IsNullOrEmpty(resname) ? resname : !string.IsNullOrEmpty(id) ? "id:" + id : null;
+        string? target = null;
+        string? source = null;
+        if (!reader.IsEmptyElement)
+        {
+            var depth = reader.Depth;
+            while (reader.Read())
+            {
+                CheckDepth(reader);
+                if (reader.NodeType == XmlNodeType.EndElement && reader.Depth == depth)
+                {
+                    break;
+                }
+
+                if (reader.NodeType == XmlNodeType.Element && reader.Depth == depth + 1)
+                {
+                    if (reader.LocalName == "target")
+                    {
+                        target ??= ReadText(reader);
+                    }
+                    else if (reader.LocalName == "source")
+                    {
+                        source ??= ReadText(reader);
+                    }
+                }
+            }
+        }
+
+        return key is null ? null : new RawUnit(key, target, source);
+    }
+
+    // Concatenates the text of an element, flattening inline elements (g, x, bpt ...) to their text.
+    private static string ReadText(XmlReader reader)
+    {
+        if (reader.IsEmptyElement)
+        {
+            return string.Empty;
+        }
+
+        var depth = reader.Depth;
+        var builder = new StringBuilder();
+        while (reader.Read())
+        {
+            CheckDepth(reader);
+            if (reader.NodeType == XmlNodeType.EndElement && reader.Depth == depth)
+            {
+                break;
+            }
+
+            if (reader.NodeType is XmlNodeType.Text or XmlNodeType.CDATA or XmlNodeType.Whitespace or XmlNodeType.SignificantWhitespace)
+            {
+                builder.Append(reader.Value);
+            }
+        }
+
+        return builder.ToString();
+    }
+
+    private static void CheckDepth(XmlReader reader)
+    {
+        if (reader.Depth > MaxDepth)
+        {
+            throw new XmlException("The XLIFF document is nested too deeply.");
+        }
     }
 
     private static XElement Text(string name, string value) =>
