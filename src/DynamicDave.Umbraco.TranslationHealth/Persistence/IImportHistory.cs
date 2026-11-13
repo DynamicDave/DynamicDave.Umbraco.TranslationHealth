@@ -38,5 +38,6 @@ public interface IImportHistory
 
     IReadOnlyList<ImportRowRecord> Rows(Guid key);
 
-    void MarkUndone(Guid key, string userName, DateTime utc);
+    /// <summary>Marks an import undone only while it is still applied. Returns false when it is unknown or already undone.</summary>
+    bool MarkUndone(Guid key, string userName, DateTime utc);
 }

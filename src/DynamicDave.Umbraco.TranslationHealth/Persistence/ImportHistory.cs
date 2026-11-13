@@ -77,18 +77,20 @@ public sealed class ImportHistory(IScopeProvider scopeProvider) : IImportHistory
             .ToList();
     }
 
-    public void MarkUndone(Guid key, string userName, DateTime utc)
+    public bool MarkUndone(Guid key, string userName, DateTime utc)
     {
         var undone = (int)ImportState.Undone;
+        var applied = (int)ImportState.Applied;
         DateTime? undoneUtc = StatusRowMapping.AsUtc(utc);
         using var scope = scopeProvider.CreateScope();
-        scope.Database.Execute(scope.SqlContext.Sql()
+        var changed = scope.Database.Execute(scope.SqlContext.Sql()
             .Update<ImportDto>(u => u
                 .Set(x => x.State, undone)
                 .Set(x => x.UndoneUtc, undoneUtc)
                 .Set(x => x.UndoneBy, userName))
-            .Where<ImportDto>(x => x.Key == key));
+            .Where<ImportDto>(x => x.Key == key && x.State == applied));
         scope.Complete();
+        return changed > 0;
     }
 
     private static ImportDto? FindImport(IScope scope, Guid key)

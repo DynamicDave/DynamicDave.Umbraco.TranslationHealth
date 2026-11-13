@@ -159,5 +159,13 @@ public static class ImportPlanner
         return null;
     }
 
-    private static string NormalizeLineEndings(string value) => value.Replace("\r\n", "\n").Replace('\r', '\n');
+    internal static string NormalizeLineEndings(string value) => value.Replace("\r\n", "\n").Replace('\r', '\n');
+
+    /// <summary>The planner's equality: line endings are ignored and a whitespace-only value equals no value.</summary>
+    internal static bool SameValue(string? left, string? right)
+    {
+        var a = string.IsNullOrWhiteSpace(left) ? string.Empty : NormalizeLineEndings(left);
+        var b = string.IsNullOrWhiteSpace(right) ? string.Empty : NormalizeLineEndings(right);
+        return string.Equals(a, b, StringComparison.Ordinal);
+    }
 }
