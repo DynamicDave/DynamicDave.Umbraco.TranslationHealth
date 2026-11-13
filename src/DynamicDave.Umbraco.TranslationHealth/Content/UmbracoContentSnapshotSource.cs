@@ -124,6 +124,10 @@ public sealed class UmbracoContentSnapshotSource(
     IOptionsMonitor<TranslationHealthOptions> options,
     TimeProvider timeProvider) : IContentSnapshotSource
 {
+    // IContentService.GetById(Guid) moved to IContentServiceBase<IContent> in Umbraco 18.
+    internal static readonly Func<IContentService, Guid, IContent?> GetByKey =
+        InterfaceMethod.BindOpen<Func<IContentService, Guid, IContent?>>(typeof(IContentService), "GetById");
+
     private static readonly Func<IContent, string, bool> IsCulturePublished =
         InterfaceMethod.BindOpen<Func<IContent, string, bool>>(typeof(IContent), "IsCulturePublished");
 
@@ -141,7 +145,7 @@ public sealed class UmbracoContentSnapshotSource(
 
     public DocumentSnapshot? Get(Guid key)
     {
-        var content = contentService.GetById(key);
+        var content = GetByKey(contentService, key);
         if (content is null || content.Trashed || !IsIncluded(content.ContentType.Variations, content.ContentType.Alias))
         {
             return null;
@@ -183,8 +187,19 @@ public sealed class UmbracoContentSnapshotSource(
         }
     }
 
+    // A document in the recycle bin is not in the main navigation structure, so fall back to the bin's.
     public IReadOnlyList<Guid> DescendantKeys(Guid key)
-        => navigation.TryGetDescendantsKeys(key, out var keys) ? keys.ToList() : [];
+        => navigation.TryGetDescendantsKeys(key, out var keys) ? keys.ToList()
+            : navigation.TryGetDescendantsKeysInBin(key, out var binKeys) ? binKeys.ToList()
+            : [];
+
+    public void ClearCache()
+    {
+        lock (_typeIdsLock)
+        {
+            _typeIdsLoadedAt = DateTimeOffset.MinValue;
+        }
+    }
 
     private bool IsIncluded(ContentVariation variations, string alias)
         => (variations & ContentVariation.Culture) != 0

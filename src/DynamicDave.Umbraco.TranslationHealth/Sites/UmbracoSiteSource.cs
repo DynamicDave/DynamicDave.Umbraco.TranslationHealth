@@ -1,3 +1,4 @@
+using DynamicDave.Umbraco.TranslationHealth.Content;
 using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.Services;
 using Umbraco.Cms.Core.Services.Navigation;
@@ -64,7 +65,7 @@ public sealed class UmbracoSiteSource(
         {
             foreach (var key in rootKeys)
             {
-                if (contentService.GetById(key) is { Trashed: false } root && seen.Add(root.Id)) candidates.Add(root);
+                if (UmbracoContentSnapshotSource.GetByKey(contentService, key) is { Trashed: false } root && seen.Add(root.Id)) candidates.Add(root);
             }
         }
 
