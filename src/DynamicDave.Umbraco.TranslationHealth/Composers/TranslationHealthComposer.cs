@@ -1,4 +1,5 @@
 using DynamicDave.Umbraco.TranslationHealth.Content;
+using DynamicDave.Umbraco.TranslationHealth.Documents;
 using DynamicDave.Umbraco.TranslationHealth.Indexing;
 using DynamicDave.Umbraco.TranslationHealth.Jobs;
 using DynamicDave.Umbraco.TranslationHealth.Overview;
@@ -28,6 +29,7 @@ public class TranslationHealthComposer : IComposer
 
         builder.Services.AddSingleton<OverviewQuery>();
         builder.Services.AddTransient<BreadcrumbResolver>();
+        builder.Services.AddSingleton<DocumentTranslations>();
 
         builder.Services.AddSingleton<ISiteSource, UmbracoSiteSource>();
         builder.Services.AddSingleton<IContentSnapshotSource, UmbracoContentSnapshotSource>();
