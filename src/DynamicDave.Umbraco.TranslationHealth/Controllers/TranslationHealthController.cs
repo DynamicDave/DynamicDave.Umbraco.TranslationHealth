@@ -253,8 +253,9 @@ public class TranslationHealthController(
             // Checked under the lock of the reindexer: a save that makes the language up to date in between is not overwritten.
             reindexer.MarkUpToDate(key, language.IsoCode, user.Key, requireOutdated: true);
         }
-        catch (InvalidOperationException)
+        catch (NotOutdatedException)
         {
+            // Any other failure is not a conflict: it surfaces as a server error.
             return ConflictError(ApiErrors.NotOutdated);
         }
 

@@ -149,10 +149,10 @@ public class ReindexerTests
         AddDocument(key, 1, "a", null);
         _reindexer.Reindex(key, IndexMode.Save);
 
-        Assert.Throws<InvalidOperationException>(() => _reindexer.MarkUpToDate(key, Nl, Guid.NewGuid()));
-        Assert.Throws<InvalidOperationException>(() => _reindexer.MarkUpToDate(key, En, Guid.NewGuid()));
-        Assert.Throws<InvalidOperationException>(() => _reindexer.MarkUpToDate(key, "de-DE", Guid.NewGuid()));
-        Assert.Throws<InvalidOperationException>(() => _reindexer.MarkUpToDate(Guid.NewGuid(), Nl, Guid.NewGuid()));
+        Assert.Throws<NotOutdatedException>(() => _reindexer.MarkUpToDate(key, Nl, Guid.NewGuid()));
+        Assert.Throws<NotOutdatedException>(() => _reindexer.MarkUpToDate(key, En, Guid.NewGuid()));
+        Assert.Throws<NotOutdatedException>(() => _reindexer.MarkUpToDate(key, "de-DE", Guid.NewGuid()));
+        Assert.Throws<NotOutdatedException>(() => _reindexer.MarkUpToDate(Guid.NewGuid(), Nl, Guid.NewGuid()));
     }
 
     [Fact]
@@ -163,7 +163,7 @@ public class ReindexerTests
         _reindexer.Reindex(key, IndexMode.Save);
 
         // Not outdated: refused, and the row is left alone.
-        Assert.Throws<InvalidOperationException>(() => _reindexer.MarkUpToDate(key, Nl, Guid.NewGuid(), requireOutdated: true));
+        Assert.Throws<NotOutdatedException>(() => _reindexer.MarkUpToDate(key, Nl, Guid.NewGuid(), requireOutdated: true));
         Assert.Null(_store.GetVariants(key).Single(v => v.Culture == Nl).MarkedByUserKey);
 
         _source.Replace(FakeSnapshotSource.Doc(key, 1, C(En, VariantBaseState.Published, "a"), C(Nl, VariantBaseState.Published, "b2")));

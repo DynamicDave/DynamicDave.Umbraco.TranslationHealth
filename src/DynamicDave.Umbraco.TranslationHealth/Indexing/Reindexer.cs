@@ -75,7 +75,7 @@ public sealed class Reindexer(
     /// and a save that is still queued marks the row outdated again once it is indexed.
     /// </summary>
     /// <param name="requireOutdated">Refuse a language that is not outdated; checked under the lock, so it cannot change in between.</param>
-    /// <exception cref="InvalidOperationException">The row does not exist, is not created, belongs to the default language, or is not outdated while <paramref name="requireOutdated"/> is set.</exception>
+    /// <exception cref="NotOutdatedException">The row does not exist, is not created, belongs to the default language, or is not outdated while <paramref name="requireOutdated"/> is set.</exception>
     public VariantRow MarkUpToDate(Guid key, string culture, Guid userKey, bool requireOutdated = false)
     {
         lock (_gate)
@@ -86,11 +86,12 @@ public sealed class Reindexer(
             if (row is null || Same(row.Culture, defaultCulture) || row.Status is CellStatus.Missing or CellStatus.NotApplicable
                 || (requireOutdated && !row.Outdated))
             {
-                throw new InvalidOperationException($"Language '{culture}' of document {key} cannot be marked up to date.");
+                throw new NotOutdatedException(key, culture);
             }
 
+            // Without text in the default language there is nothing to be up to date with.
             var fingerprint = rows.FirstOrDefault(r => Same(r.Culture, defaultCulture))?.TextFingerprint
-                ?? throw new InvalidOperationException($"Document {key} has no text in its default language to compare with.");
+                ?? throw new NotOutdatedException(key, culture);
 
             var marked = StatusIndexer.MarkUpToDate(row, fingerprint, userKey, Now());
             store.SaveVariant(marked);
