@@ -26,8 +26,12 @@ internal sealed class FakeKeyValueService : IKeyValueService
         }
     }
 
+    /// <summary>Runs at the start of every plain SetValue, with the key.</summary>
+    public Action<string>? OnSetValue { get; set; }
+
     public void SetValue(string key, string value)
     {
+        OnSetValue?.Invoke(key);
         lock (Values) Values[key] = value;
     }
 

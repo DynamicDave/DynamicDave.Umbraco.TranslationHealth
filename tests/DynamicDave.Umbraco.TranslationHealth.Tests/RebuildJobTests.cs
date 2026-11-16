@@ -78,6 +78,40 @@ public class RebuildJobTests
     }
 
     [Fact]
+    public async Task Every_write_of_the_rebuild_waits_for_editors_to_pause_first()
+    {
+        // 2300 documents: three chunks. 450 rows of documents that no longer exist: three orphan chunks.
+        AddDocuments(2300);
+        for (var i = 0; i < 450; i++)
+        {
+            var orphan = Guid.NewGuid();
+            _store.Save(new IndexResult(
+                new DocumentRow(orphan, 10_000 + i, null, $"-1,{10_000 + i}", "00099", 1, "page", Guid.Empty, "orphan"), [StoredNl(orphan, "x")]));
+        }
+
+        var order = new List<string>();
+        var activity = new EditorActivity(_time, by => { order.Add("wait"); _time.Advance(by); });
+
+        // Every write is itself an edit as far as the gate is concerned, so the next write must wait again.
+        _store.OnSave = () => { order.Add("write"); activity.Mark(); };
+        _keyValues.OnSetValue = key => { order.Add($"key:{key}"); activity.Mark(); };
+        var job = new RebuildJob(_source, _reindexer, _keyValues, _sites, _options, _time, activity);
+        activity.Mark();
+
+        await job.RunAsync(IndexMode.Rebuild, NoProgress, CancellationToken.None);
+
+        Assert.Equal(3 + 3, order.Count(o => o == "write"));
+        Assert.Equal(3, order.Count(o => o.StartsWith("key:", StringComparison.Ordinal)));
+        for (var i = 0; i < order.Count; i++)
+        {
+            if (order[i] != "wait")
+            {
+                Assert.True(i > 0 && order[i - 1] == "wait", $"'{order[i]}' at {i} did not wait first: {string.Join(",", order)}");
+            }
+        }
+    }
+
+    [Fact]
     public async Task Rebuild_indexes_all_documents_and_removes_orphans()
     {
         var keys = AddDocuments(450);
