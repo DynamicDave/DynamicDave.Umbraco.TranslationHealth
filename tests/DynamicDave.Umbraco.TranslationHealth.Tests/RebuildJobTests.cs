@@ -28,7 +28,7 @@ public class RebuildJobTests
     public RebuildJobTests()
     {
         _reindexer = new Reindexer(_source, _sites, _store, _time);
-        _job = new RebuildJob(_source, _reindexer, _keyValues, _sites, _options, _time);
+        _job = new RebuildJob(_source, _reindexer, _keyValues, _sites, _options, _time, new EditorActivity(_time));
     }
 
     private static readonly JobProgress NoProgress = new(TimeProvider.System, (_, _, _) => { });
@@ -407,7 +407,7 @@ public class RebuildJobTests
             var reindexer = new Reindexer(_source, _sites, _store, _time);
             var services = new ServiceCollection();
             services.AddTransient(_ => new RebuildJob(
-                _source, reindexer, _keyValues, _sites, new TestOptionsMonitor<TranslationHealthOptions>(new TranslationHealthOptions()), _time));
+                _source, reindexer, _keyValues, _sites, new TestOptionsMonitor<TranslationHealthOptions>(new TranslationHealthOptions()), _time, new EditorActivity(_time)));
             var provider = services.BuildServiceProvider();
             _runner = new JobRunner(_keyValues, provider.GetRequiredService<IServiceScopeFactory>(), _time, new EditorActivity(_time), new ListLogger<JobRunner>());
             _scheduler = new RebuildScheduler(_runner, _sites, _keyValues, new ListLogger<RebuildScheduler>());

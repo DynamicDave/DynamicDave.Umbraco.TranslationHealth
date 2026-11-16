@@ -28,7 +28,7 @@ public class StartupCheckTests
         var options = new TestOptionsMonitor<TranslationHealthOptions>(new TranslationHealthOptions());
         var reindexer = new Reindexer(_source, _sites, _store, time);
         var services = new ServiceCollection();
-        services.AddTransient(_ => new RebuildJob(_source, reindexer, _keyValues, _sites, options, time));
+        services.AddTransient(_ => new RebuildJob(_source, reindexer, _keyValues, _sites, options, time, new EditorActivity(time)));
         _runner = new JobRunner(
             _keyValues, services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(), time, new EditorActivity(time), new ListLogger<JobRunner>());
         _scheduler = new RebuildScheduler(_runner, _sites, _keyValues, new ListLogger<RebuildScheduler>());

@@ -22,6 +22,8 @@ public class ContentChangeHandlerTests
     private readonly FakeSiteSource _sites = new();
     private readonly FakeKeyValueService _keyValues = new();
     private readonly ReindexQueue _queue = new();
+    private readonly ManualTimeProvider _time = new(Start);
+    private readonly EditorActivity _activity;
     private readonly RebuildScheduler _scheduler;
     private readonly ContentChangeHandlers _handlers;
     private readonly ContentType _type = new(new DefaultShortStringHelper(Options.Create(new RequestHandlerSettings())), -1)
@@ -35,17 +37,18 @@ public class ContentChangeHandlerTests
     public ContentChangeHandlerTests()
     {
         _keyValues.Values[Constants.JobStateKey] = string.Empty;
-        var time = new ManualTimeProvider(Start);
+        var time = _time;
+        _activity = new EditorActivity(time, by => time.Advance(by));
         var reindexer = new Reindexer(_source, _sites, new FakeStatusStore(), time);
         var services = new ServiceCollection();
         services.AddTransient(_ => new RebuildJob(
-            _source, reindexer, _keyValues, _sites, new TestOptionsMonitor<TranslationHealthOptions>(new TranslationHealthOptions()), time));
+            _source, reindexer, _keyValues, _sites, new TestOptionsMonitor<TranslationHealthOptions>(new TranslationHealthOptions()), time, _activity));
         var provider = services.BuildServiceProvider();
-        _runner = new JobRunner(_keyValues, provider.GetRequiredService<IServiceScopeFactory>(), time, new EditorActivity(time), new ListLogger<JobRunner>());
+        _runner = new JobRunner(_keyValues, provider.GetRequiredService<IServiceScopeFactory>(), time, _activity, new ListLogger<JobRunner>());
         _scheduler = new RebuildScheduler(_runner, _sites, _keyValues, new ListLogger<RebuildScheduler>());
         var (state, control) = FakeRuntimeState.Create();
         _runtime = control;
-        _handlers = new ContentChangeHandlers(_queue, _source, _sites, _scheduler, state, new ListLogger<ContentChangeHandlers>());
+        _handlers = new ContentChangeHandlers(_queue, _source, _sites, _scheduler, state, new ListLogger<ContentChangeHandlers>(), _activity);
     }
 
     private IContent Doc(Guid key) => new global::Umbraco.Cms.Core.Models.Content("name", -1, _type) { Key = key };
@@ -116,12 +119,43 @@ public class ContentChangeHandlerTests
     }
 
     [Fact]
+    public void Editor_actions_mark_activity_in_memory_only()
+    {
+        var helper = new DefaultShortStringHelper(Options.Create(new RequestHandlerSettings()));
+        var media = new Media("m", -1, new MediaType(helper, -1) { Alias = "image" });
+        var dictionaryItem = new DictionaryItem("greeting");
+        Action[] handles =
+        [
+            () => _handlers.Handle(new ContentSavingNotification(Doc(Guid.NewGuid()), Messages())),
+            () => _handlers.Handle(new ContentRollingBackNotification(Doc(Guid.NewGuid()), Messages())),
+            () => _handlers.Handle(new ContentEmptyingRecycleBinNotification([Doc(Guid.NewGuid())], Messages())),
+            () => _handlers.Handle(new DictionaryItemSavingNotification(dictionaryItem, Messages())),
+            () => _handlers.Handle(new DictionaryItemDeletingNotification(dictionaryItem, Messages())),
+            () => _handlers.Handle(new MediaSavingNotification(media, Messages())),
+            () => _handlers.Handle(new MediaMovingNotification(new MoveEventInfo<IMedia>(media, "-1,5", 7), Messages())),
+            () => _handlers.Handle(new MediaDeletingNotification(media, Messages())),
+        ];
+
+        foreach (var handle in handles)
+        {
+            _time.Advance(EditorActivity.QuietWindow);
+            Assert.True(_activity.IsQuiet());
+
+            handle();
+
+            Assert.False(_activity.IsQuiet());
+        }
+
+        Assert.Empty(Taken());
+    }
+
+    [Fact]
     public void A_failing_lookup_never_fails_the_notification()
     {
         var moved = Guid.NewGuid();
         _source.Descendants.Clear();
         var failing = new ContentChangeHandlers(
-            _queue, new ThrowingSource(), _sites, _scheduler, FakeRuntimeState.Create().State, new ListLogger<ContentChangeHandlers>());
+            _queue, new ThrowingSource(), _sites, _scheduler, FakeRuntimeState.Create().State, new ListLogger<ContentChangeHandlers>(), _activity);
 
         failing.Handle(new ContentMovedNotification(new MoveEventInfo<IContent>(Doc(moved), "-1,5", 7), Messages()));
 

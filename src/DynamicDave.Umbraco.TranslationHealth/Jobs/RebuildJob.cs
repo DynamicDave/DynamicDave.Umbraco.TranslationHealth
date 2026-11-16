@@ -24,7 +24,7 @@ public sealed class RebuildJob(
     ISiteSource sites,
     IOptionsMonitor<TranslationHealthOptions> options,
     TimeProvider timeProvider,
-    EditorActivity? activity = null)
+    EditorActivity activity)
 {
     public const int PageSize = 200;
 
@@ -67,7 +67,7 @@ public sealed class RebuildJob(
             if (pending.Count >= WriteChunkSize || last)
             {
                 // A snapshot that is older by a few pages is fine: documents handled since BeginTracking are skipped.
-                activity?.WaitUntilQuiet(cancellationToken);
+                activity.WaitUntilQuiet(cancellationToken);
                 reindexer.IndexPage(pending, mode);
                 pending = [];
             }
@@ -79,19 +79,19 @@ public sealed class RebuildJob(
             }
         }
 
-        // Only a complete pass gets here (an exception or a cancel skipped this). Paging by offset can skip live documents
-        // when others move meanwhile, so the rows of unseen documents are checked again, not just deleted.
+        // Only a complete pass gets here (an exception or a cancel skipped this). Paging is by id, but deletions meanwhile shift the
+        // offsets and can skip live documents, so the rows of unseen documents are checked again, not just deleted.
         cancellationToken.ThrowIfCancellationRequested();
         progress.Report(seen.Count, seen.Count, JobPhases.RemovingOrphans);
-        activity?.WaitUntilQuiet(cancellationToken);
-        reindexer.RemoveOrphans(seen, tracking, mode, () => activity?.WaitUntilQuiet(cancellationToken));
+        activity.WaitUntilQuiet(cancellationToken);
+        reindexer.RemoveOrphans(seen, tracking, mode, () => activity.WaitUntilQuiet(cancellationToken));
 
         // IKeyValueService has no bulk write: every key is its own commit, so each waits for editors too.
-        activity?.WaitUntilQuiet(cancellationToken);
+        activity.WaitUntilQuiet(cancellationToken);
         keyValues.SetValue(Constants.DefaultCultureKey, defaultCulture);
-        activity?.WaitUntilQuiet(cancellationToken);
+        activity.WaitUntilQuiet(cancellationToken);
         keyValues.SetValue(Constants.ExcludedTypesKey, excludedHash);
-        activity?.WaitUntilQuiet(cancellationToken);
+        activity.WaitUntilQuiet(cancellationToken);
         keyValues.SetValue(Constants.LastRebuildKey, timeProvider.GetUtcNow().UtcDateTime.ToString("o"));
 
         var summary = JsonSerializer.Serialize(new { documents = seen.Count });
