@@ -107,10 +107,58 @@ public class ReindexProcessorTests
         Assert.Equal("database is locked", JsonSerializer.Deserialize<IndexError>(_keyValues.GetValue(Constants.LastIndexErrorKey)!)!.Message);
 
         _store.OnSave = null;
+        _time.Advance(ReindexProcessor.FirstRetryDelay);
         _processor.ProcessPending();
 
         Assert.Equal(keys.Order(), _store.Keys.Order());
         Assert.Equal(string.Empty, _keyValues.GetValue(Constants.LastIndexErrorKey));
+    }
+
+    [Fact]
+    public void A_failing_write_is_retried_with_a_growing_delay_of_at_most_five_minutes()
+    {
+        var keys = new[] { AddDocument(1), AddDocument(2) };
+        _queue.Enqueue(keys);
+        var writes = 0;
+        _store.OnSave = () =>
+        {
+            writes++;
+            throw new InvalidOperationException("no such table");
+        };
+
+        _processor.ProcessPending();
+        Assert.Equal(1, writes);
+
+        // Every failure doubles the wait, starting at 4 seconds: the worker's 2-second ticks in between do nothing.
+        var delay = TimeSpan.FromSeconds(4);
+        for (var attempt = 2; attempt <= 12; attempt++)
+        {
+            _time.Advance(delay - TimeSpan.FromSeconds(1));
+            Assert.Equal(0, _processor.ProcessPending());
+            Assert.Equal(attempt - 1, writes);
+
+            _time.Advance(TimeSpan.FromSeconds(1));
+            _processor.ProcessPending();
+            Assert.Equal(attempt, writes);
+            delay = TimeSpan.FromTicks(Math.Min(delay.Ticks * 2, TimeSpan.FromMinutes(5).Ticks));
+        }
+
+        Assert.Equal(TimeSpan.FromMinutes(5), delay);
+        Assert.Equal(2, _queue.Count); // nothing is lost
+
+        // Once the database is back, the keys are written and the delay starts over.
+        _store.OnSave = null;
+        _time.Advance(delay);
+        Assert.Equal(2, _processor.ProcessPending());
+        Assert.Equal(keys.Order(), _store.Keys.Order());
+
+        var more = AddDocument(3);
+        _queue.Enqueue([more]);
+        _store.OnSave = () => throw new InvalidOperationException("locked");
+        _processor.ProcessPending();
+        _store.OnSave = null;
+        _time.Advance(TimeSpan.FromSeconds(4));
+        Assert.Equal(1, _processor.ProcessPending());
     }
 
     [Fact]

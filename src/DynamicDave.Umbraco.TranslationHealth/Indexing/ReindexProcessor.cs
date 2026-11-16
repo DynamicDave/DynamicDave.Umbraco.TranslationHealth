@@ -5,7 +5,12 @@ using Umbraco.Cms.Core.Services;
 
 namespace DynamicDave.Umbraco.TranslationHealth.Indexing;
 
-/// <summary>Empties the <see cref="ReindexQueue"/> in batches. Separate from the hosted service so tests can drive it.</summary>
+/// <summary>
+/// Empties the <see cref="ReindexQueue"/> in batches. Separate from the hosted service so tests can drive it. Called by
+/// the worker only, never concurrently. After a failed write it waits before it tries again (<see cref="FirstRetryDelay"/>,
+/// doubling up to <see cref="MaxRetryDelay"/>), so a database that stays unavailable (e.g. missing tables) is not hit and
+/// logged every few seconds; the keys stay queued meanwhile.
+/// </summary>
 public sealed class ReindexProcessor(
     ReindexQueue queue,
     Reindexer reindexer,
@@ -15,10 +20,23 @@ public sealed class ReindexProcessor(
 {
     public const int BatchSize = 200;
 
-    /// <summary>Handles every queued document, a batch at a time; returns how many were handled.</summary>
+    /// <summary>The wait after the first failed write; it doubles with every further failure, up to <see cref="MaxRetryDelay"/>.</summary>
+    public static readonly TimeSpan FirstRetryDelay = TimeSpan.FromSeconds(4);
+
+    public static readonly TimeSpan MaxRetryDelay = TimeSpan.FromMinutes(5);
+
+    private int _writeFailures;
+    private DateTimeOffset _retryAfter = DateTimeOffset.MinValue;
+
+    /// <summary>Handles every queued document, a batch at a time; returns how many were handled (0 while it waits after a failed write).</summary>
     public int ProcessPending(CancellationToken cancellationToken = default)
     {
         var handled = 0;
+        if (timeProvider.GetUtcNow() < _retryAfter)
+        {
+            return handled;
+        }
+
         while (!cancellationToken.IsCancellationRequested)
         {
             var batch = queue.TakeBatch(BatchSize);
@@ -30,8 +48,16 @@ public sealed class ReindexProcessor(
             handled += batch.Count;
             if (!ProcessBatch(batch))
             {
-                break; // the write failed and the batch is queued again: wait for the next tick
+                // The write failed and the batch is queued again: wait, longer after every failure in a row.
+                _writeFailures++;
+                var delay = TimeSpan.FromTicks(Math.Min(
+                    FirstRetryDelay.Ticks << Math.Min(_writeFailures - 1, 30),
+                    MaxRetryDelay.Ticks));
+                _retryAfter = timeProvider.GetUtcNow() + delay;
+                break;
             }
+
+            _writeFailures = 0;
         }
 
         return handled;
