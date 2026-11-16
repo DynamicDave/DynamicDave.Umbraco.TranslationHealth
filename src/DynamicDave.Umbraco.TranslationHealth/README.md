@@ -84,7 +84,7 @@ Upload a CSV or XLIFF file. Nothing changes yet: the test run gives every row an
 | Unchanged | The file has the value that is already there. |
 | New key | The key does not exist and **Create new keys** is on. New keys go under the existing item whose key is the longest dot-prefix of the new key, otherwise at the root. |
 | Skipped: unknown key | The key does not exist and Create new keys is off. |
-| Error | With the reason: a language you may not edit, unknown language, empty or duplicate key, malformed row. |
+| Error | With the reason: a language you may not edit, a language that is not installed, an empty key, or a key that appears more than once in the file. |
 
 You choose which rows to apply; all applicable rows are selected by default. For XLIFF, a row whose source text changed since the export gets a warning with both texts and is not selected by default.
 
