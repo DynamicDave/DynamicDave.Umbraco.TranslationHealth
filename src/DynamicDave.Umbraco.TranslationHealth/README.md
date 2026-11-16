@@ -94,7 +94,7 @@ Safety rules:
 
 - **Empty cells never clear a value.**
 - **Nothing is written before the test run**, and only the selected rows are written.
-- **Compare-and-set**: each value is written only if it is still what the test run saw. A value an editor changed in between is never overwritten; it is reported as "Not written: changed since the test run".
+- **Compare-and-set**: just before a value is written, it is compared with what the test run saw. A value an editor changed since the test run is not overwritten; it is reported as "Not written: changed since the test run". There is no lock across Umbraco's dictionary service, so an edit saved in the same instant as the import can still be overwritten.
 - Only languages your user group may edit are written; other languages show as errors.
 - A test run can be applied for one hour; after that, upload the file again.
 
