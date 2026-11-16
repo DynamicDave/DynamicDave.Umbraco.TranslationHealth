@@ -12,5 +12,23 @@
     "Url": "https://github.com/dynamicdave",
     "ImageUrl": "https://github.com/dynamicdave.png",
     "SyncContributorsFromRepository": true
-  }
+  },
+  "Screenshots": [
+    {
+      "ImageUrl": "https://raw.githubusercontent.com/DynamicDave/DynamicDave.Umbraco.TranslationHealth/main/docs/screenshots/translation-overview.png",
+      "Caption": "Every page and language in one overview, with outdated translations flagged"
+    },
+    {
+      "ImageUrl": "https://raw.githubusercontent.com/DynamicDave/DynamicDave.Umbraco.TranslationHealth/main/docs/screenshots/missing-translations.png",
+      "Caption": "Dictionary items without a translation, per language"
+    },
+    {
+      "ImageUrl": "https://raw.githubusercontent.com/DynamicDave/DynamicDave.Umbraco.TranslationHealth/main/docs/screenshots/import-test-run.png",
+      "Caption": "A test run of every imported row before anything changes"
+    },
+    {
+      "ImageUrl": "https://raw.githubusercontent.com/DynamicDave/DynamicDave.Umbraco.TranslationHealth/main/docs/screenshots/document-tab.png",
+      "Caption": "The Translations tab on a document"
+    }
+  ]
 }
