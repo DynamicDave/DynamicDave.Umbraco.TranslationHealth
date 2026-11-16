@@ -72,4 +72,33 @@ public class EditorActivityTests
 
         Assert.Throws<OperationCanceledException>(() => _activity.WaitUntilQuiet(cts.Token));
     }
+
+    [Fact]
+    public void IsQuiet_is_true_without_editing_false_right_after_a_change_and_true_after_the_window()
+    {
+        Assert.True(_activity.IsQuiet());
+
+        _activity.Mark();
+        Assert.False(_activity.IsQuiet());
+
+        _time.Advance(EditorActivity.QuietWindow);
+        Assert.True(_activity.IsQuiet());
+        Assert.Empty(_sleeps);
+    }
+
+    [Fact]
+    public async Task The_default_wait_wakes_at_once_when_the_token_is_cancelled()
+    {
+        var activity = new EditorActivity(TimeProvider.System);
+        activity.Mark();
+        using var cts = new CancellationTokenSource();
+
+        var wait = Task.Run(() => activity.WaitUntilQuiet(cts.Token));
+        await Task.Delay(300);
+        var cancelledAt = System.Diagnostics.Stopwatch.StartNew();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => wait);
+        Assert.True(cancelledAt.Elapsed < TimeSpan.FromMilliseconds(80), $"took {cancelledAt.Elapsed}");
+    }
 }

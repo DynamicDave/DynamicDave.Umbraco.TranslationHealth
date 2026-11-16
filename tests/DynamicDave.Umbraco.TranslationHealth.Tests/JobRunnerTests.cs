@@ -1,3 +1,4 @@
+using DynamicDave.Umbraco.TranslationHealth.Indexing;
 using DynamicDave.Umbraco.TranslationHealth.Jobs;
 using DynamicDave.Umbraco.TranslationHealth.Persistence;
 using DynamicDave.Umbraco.TranslationHealth.Tests.Fakes;
@@ -30,7 +31,7 @@ public class JobRunnerTests
     }
 
     private JobRunner Runner() =>
-        new(_keyValues, _services.GetRequiredService<IServiceScopeFactory>(), _time, _log)
+        new(_keyValues, _services.GetRequiredService<IServiceScopeFactory>(), _time, new EditorActivity(_time), _log)
         {
             FinalWriteRetryDelays = [TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero],
         };
@@ -315,6 +316,35 @@ public class JobRunnerTests
         progress.Report(1, 4, JobPhases.RemovingOrphans);
 
         Assert.Equal([(1, 10, JobPhases.Indexing), (0, 4, JobPhases.RemovingOrphans), (1, 4, JobPhases.RemovingOrphans)], saves);
+    }
+
+    [Fact]
+    public void Report_skips_the_save_while_editors_are_saving_and_the_next_report_carries_the_values()
+    {
+        var saves = new List<(int Done, int Total, string Phase)>();
+        var quiet = false;
+        var progress = new JobProgress(_time, (done, total, phase) => saves.Add((done, total, phase)), () => quiet);
+
+        progress.Report(1, 10, JobPhases.Indexing);
+        progress.Report(0, 4, JobPhases.RemovingOrphans);
+        Assert.Empty(saves);
+
+        quiet = true;
+        progress.Report(1, 4, JobPhases.RemovingOrphans);
+
+        Assert.Equal([(1, 4, JobPhases.RemovingOrphans)], saves);
+    }
+
+    [Fact]
+    public void Heartbeat_saves_even_while_editors_are_saving()
+    {
+        var saves = new List<(int Done, int Total, string Phase)>();
+        var progress = new JobProgress(_time, (done, total, phase) => saves.Add((done, total, phase)), () => false);
+
+        progress.Report(3, 10, JobPhases.Indexing);
+        progress.Beat();
+
+        Assert.Equal([(3, 10, JobPhases.Indexing)], saves);
     }
 
     [Fact]

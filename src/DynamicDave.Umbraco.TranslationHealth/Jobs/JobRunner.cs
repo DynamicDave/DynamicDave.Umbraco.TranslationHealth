@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using DynamicDave.Umbraco.TranslationHealth.Indexing;
 using DynamicDave.Umbraco.TranslationHealth.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -11,7 +12,12 @@ namespace DynamicDave.Umbraco.TranslationHealth.Jobs;
 /// Runs the one background job of the installation (the rebuild). The state lives in umbracoKeyValue, so
 /// every server behind a load balancer sees it; starting a job claims it with compare-and-set on the stored value.
 /// </summary>
-public sealed class JobRunner(IKeyValueService keyValues, IServiceScopeFactory scopeFactory, TimeProvider timeProvider, ILogger<JobRunner> logger)
+public sealed class JobRunner(
+    IKeyValueService keyValues,
+    IServiceScopeFactory scopeFactory,
+    TimeProvider timeProvider,
+    EditorActivity activity,
+    ILogger<JobRunner> logger)
 {
     /// <summary>A running job whose heartbeat is older than this counts as aborted (e.g. after a restart).</summary>
     public static readonly TimeSpan StaleAfter = TimeSpan.FromMinutes(2);
@@ -37,6 +43,7 @@ public sealed class JobRunner(IKeyValueService keyValues, IServiceScopeFactory s
     private readonly IKeyValueService _keyValues = keyValues;
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
     private readonly TimeProvider _timeProvider = timeProvider;
+    private readonly EditorActivity _activity = activity;
     private readonly ILogger<JobRunner> _logger = logger;
     private readonly Lock _startGate = new();
 
@@ -171,7 +178,8 @@ public sealed class JobRunner(IKeyValueService keyValues, IServiceScopeFactory s
             Func<IServiceProvider, JobProgress, CancellationToken, Task<(Guid? ResultKey, TempKind? ResultKind, string? Summary)>> work)
         {
             var progress = new JobProgress(runner._timeProvider, (done, total, phase) =>
-                Write(s => s with { Done = done, Total = total, Phase = phase, HeartbeatUtc = runner.Now() }, close: false));
+                Write(s => s with { Done = done, Total = total, Phase = phase, HeartbeatUtc = runner.Now() }, close: false),
+                runner._activity.IsQuiet);
 
             // Taken before Write, never inside it: Report and Beat hold the progress lock while they call Write.
             Func<JobState, JobState> Ended(JobStatus status, Func<JobState, JobState> result)
@@ -375,6 +383,7 @@ public sealed class JobProgress
 
     private readonly TimeProvider _timeProvider;
     private readonly Action<int, int, string> _save;
+    private readonly Func<bool> _isQuiet;
     private readonly Lock _gate = new();
     private int _done;
     private int _total;
@@ -382,10 +391,11 @@ public sealed class JobProgress
     private DateTimeOffset? _lastSave;
     private string? _lastPhase;
 
-    internal JobProgress(TimeProvider timeProvider, Action<int, int, string> save)
+    internal JobProgress(TimeProvider timeProvider, Action<int, int, string> save, Func<bool>? isQuiet = null)
     {
         _timeProvider = timeProvider;
         _save = save;
+        _isQuiet = isQuiet ?? (() => true);
     }
 
     /// <param name="phase">One of <see cref="JobPhases"/>.</param>
@@ -396,6 +406,13 @@ public sealed class JobProgress
             _done = done;
             _total = total;
             _phase = phase;
+
+            // A save while an editor is saving can make the editor's save hang on SQLite; the next report or the heartbeat carries the values.
+            if (!_isQuiet())
+            {
+                return;
+            }
+
             var now = _timeProvider.GetUtcNow();
             if (_lastSave is { } last && phase == _lastPhase && now - last < SaveInterval)
             {

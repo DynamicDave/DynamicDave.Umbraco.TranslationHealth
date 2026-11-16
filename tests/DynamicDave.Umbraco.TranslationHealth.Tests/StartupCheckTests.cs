@@ -30,7 +30,7 @@ public class StartupCheckTests
         var services = new ServiceCollection();
         services.AddTransient(_ => new RebuildJob(_source, reindexer, _keyValues, _sites, options, time));
         _runner = new JobRunner(
-            _keyValues, services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(), time, new ListLogger<JobRunner>());
+            _keyValues, services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(), time, new EditorActivity(time), new ListLogger<JobRunner>());
         _scheduler = new RebuildScheduler(_runner, _sites, _keyValues, new ListLogger<RebuildScheduler>());
         var (state, control) = FakeRuntimeState.Create();
         _runtime = control;

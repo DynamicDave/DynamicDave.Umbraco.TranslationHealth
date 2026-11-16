@@ -375,7 +375,7 @@ public class RebuildJobTests
             services.AddTransient(_ => new RebuildJob(
                 _source, reindexer, _keyValues, _sites, new TestOptionsMonitor<TranslationHealthOptions>(new TranslationHealthOptions()), _time));
             var provider = services.BuildServiceProvider();
-            _runner = new JobRunner(_keyValues, provider.GetRequiredService<IServiceScopeFactory>(), _time, new ListLogger<JobRunner>());
+            _runner = new JobRunner(_keyValues, provider.GetRequiredService<IServiceScopeFactory>(), _time, new EditorActivity(_time), new ListLogger<JobRunner>());
             _scheduler = new RebuildScheduler(_runner, _sites, _keyValues, new ListLogger<RebuildScheduler>());
             _source.Add(Doc(_key, 1));
             _store.Save(new IndexResult(

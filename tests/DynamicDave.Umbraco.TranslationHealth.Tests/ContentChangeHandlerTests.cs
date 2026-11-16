@@ -41,7 +41,7 @@ public class ContentChangeHandlerTests
         services.AddTransient(_ => new RebuildJob(
             _source, reindexer, _keyValues, _sites, new TestOptionsMonitor<TranslationHealthOptions>(new TranslationHealthOptions()), time));
         var provider = services.BuildServiceProvider();
-        _runner = new JobRunner(_keyValues, provider.GetRequiredService<IServiceScopeFactory>(), time, new ListLogger<JobRunner>());
+        _runner = new JobRunner(_keyValues, provider.GetRequiredService<IServiceScopeFactory>(), time, new EditorActivity(time), new ListLogger<JobRunner>());
         _scheduler = new RebuildScheduler(_runner, _sites, _keyValues, new ListLogger<RebuildScheduler>());
         var (state, control) = FakeRuntimeState.Create();
         _runtime = control;
