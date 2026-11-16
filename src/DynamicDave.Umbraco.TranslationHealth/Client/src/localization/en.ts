@@ -78,6 +78,7 @@ export default {
     languageNotAllowed: 'You may not edit this language.',
     exportFailed: 'The export failed.',
     invariantDocument: 'This page does not vary by language.',
+    excludedDocument: 'This document type is excluded from Translation Health.',
     importStateApplied: 'Applied',
     importStateUndone: 'Undone',
     restored: 'Values restored',

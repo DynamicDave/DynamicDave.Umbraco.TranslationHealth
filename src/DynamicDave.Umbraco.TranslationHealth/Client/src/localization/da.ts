@@ -78,6 +78,7 @@ export default {
     languageNotAllowed: 'Du må ikke redigere dette sprog.',
     exportFailed: 'Eksporten mislykkedes.',
     invariantDocument: 'Denne side varierer ikke efter sprog.',
+    excludedDocument: 'Denne dokumenttype er udelukket fra Translation Health.',
     importStateApplied: 'Anvendt',
     importStateUndone: 'Fortrudt',
     restored: 'Værdier gendannet',

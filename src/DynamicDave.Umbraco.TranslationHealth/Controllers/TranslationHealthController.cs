@@ -223,7 +223,11 @@ public class TranslationHealthController(
         if (!await HasPermissionAsync(ActionBrowse.ActionLetter, key)) return Forbidden();
         if (FindDocument(key) is not { } entity) return NotFoundError(ApiErrors.DocumentNotFound);
 
-        if (!Included(entity)) return Ok(new DocumentTranslationsResponse { VariesByCulture = false, Translations = [] });
+        var (variesByCulture, excluded) = TypeOf(entity);
+        if (!variesByCulture || excluded)
+        {
+            return Ok(new DocumentTranslationsResponse { VariesByCulture = variesByCulture, Excluded = excluded, Translations = [] });
+        }
 
         return Ok(await BuildTranslationsAsync(key, user));
     }
@@ -267,7 +271,7 @@ public class TranslationHealthController(
         var translations = documents.Get(key);
         if (translations is null)
         {
-            return new DocumentTranslationsResponse { VariesByCulture = true, Translations = [] };
+            return new DocumentTranslationsResponse { VariesByCulture = true, Excluded = false, Translations = [] };
         }
 
         var canUpdate = await HasPermissionAsync(ActionUpdate.ActionLetter, key);
@@ -276,6 +280,7 @@ public class TranslationHealthController(
         return new DocumentTranslationsResponse
         {
             VariesByCulture = true,
+            Excluded = false,
             Translations = translations
                 .Select(t => ApiMapping.ToModel(t, canUpdate && !t.IsDefault && t.Row.Outdated && editable.Contains(t.Culture)))
                 .ToArray(),
@@ -287,19 +292,20 @@ public class TranslationHealthController(
         => entityService.Get(key, UmbracoObjectTypes.Document) is { Trashed: false } entity ? entity : null;
 
     /// <summary>
-    /// Whether the document has a Translations tab: its type varies by culture and is not excluded. Decided from the
-    /// document type, so a plain page costs one lookup and no indexing.
+    /// Whether the document's type varies by culture, and whether it is excluded in the configuration; the tab shows
+    /// languages only when it varies and is not excluded. Decided from the document type, so a plain page costs one
+    /// lookup and no indexing.
     /// </summary>
-    private bool Included(IEntitySlim entity)
+    private (bool VariesByCulture, bool Excluded) TypeOf(IEntitySlim entity)
     {
-        if (entity is not IContentEntitySlim content
-            || options.CurrentValue.ExcludedDocumentTypes.Contains(content.ContentTypeAlias, StringComparer.OrdinalIgnoreCase))
+        if (entity is not IContentEntitySlim content)
         {
-            return false;
+            return (false, false);
         }
 
+        var excluded = options.CurrentValue.ExcludedDocumentTypes.Contains(content.ContentTypeAlias, StringComparer.OrdinalIgnoreCase);
         var type = contentTypeService.Get(content.ContentTypeKey);
-        return type is not null && (type.Variations & ContentVariation.Culture) != 0;
+        return (type is not null && (type.Variations & ContentVariation.Culture) != 0, excluded);
     }
 
     private async Task<bool> HasPermissionAsync(string actionLetter, Guid key)

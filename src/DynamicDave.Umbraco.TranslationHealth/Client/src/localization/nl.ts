@@ -78,6 +78,7 @@ export default {
     languageNotAllowed: 'U mag deze taal niet bewerken.',
     exportFailed: 'De export is mislukt.',
     invariantDocument: 'Deze pagina verschilt niet per taal.',
+    excludedDocument: 'Dit documenttype is uitgesloten van Translation Health.',
     importStateApplied: 'Toegepast',
     importStateUndone: 'Ongedaan gemaakt',
     restored: 'Waarden hersteld',

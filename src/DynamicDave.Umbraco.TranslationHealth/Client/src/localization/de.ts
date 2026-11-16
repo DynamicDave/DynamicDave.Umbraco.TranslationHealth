@@ -78,6 +78,7 @@ export default {
     languageNotAllowed: 'Sie dürfen diese Sprache nicht bearbeiten.',
     exportFailed: 'Der Export ist fehlgeschlagen.',
     invariantDocument: 'Diese Seite unterscheidet sich nicht nach Sprache.',
+    excludedDocument: 'Dieser Dokumenttyp ist von Translation Health ausgeschlossen.',
     importStateApplied: 'Angewendet',
     importStateUndone: 'Rückgängig gemacht',
     restored: 'Werte wiederhergestellt',

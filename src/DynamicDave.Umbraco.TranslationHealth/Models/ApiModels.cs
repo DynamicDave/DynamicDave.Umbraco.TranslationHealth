@@ -149,8 +149,11 @@ public sealed class DocumentTranslationModel
 
 public sealed class DocumentTranslationsResponse
 {
-    /// <summary>False for documents that are not culture-variant or whose type is excluded: they have no Translations tab.</summary>
+    /// <summary>False for documents that are not culture-variant: they have no Translations tab.</summary>
     public required bool VariesByCulture { get; init; }
+
+    /// <summary>The document type is excluded in the configuration (ExcludedDocumentTypes): the tab shows no languages.</summary>
+    public required bool Excluded { get; init; }
     public required DocumentTranslationModel[] Translations { get; init; }
 }
 

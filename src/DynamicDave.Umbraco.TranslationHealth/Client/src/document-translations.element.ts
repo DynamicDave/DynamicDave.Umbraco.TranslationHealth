@@ -99,9 +99,10 @@ export class DdTranslationHealthDocumentElement extends UmbLitElement {
   override render() {
     if (this._error) return html`<uui-box><p>${this.localize.term('ddTranslationHealth_loadFailed')}</p></uui-box>`;
     if (!this._data) return html`<uui-loader></uui-loader>`;
-    if (!this._data.variesByCulture) {
+    if (this._data.excluded || !this._data.variesByCulture) {
+      const term = this._data.excluded ? 'ddTranslationHealth_excludedDocument' : 'ddTranslationHealth_invariantDocument';
       return html`<uui-box headline=${this.localize.term('ddTranslationHealth_tabTitle')}>
-        <p class="muted">${this.localize.term('ddTranslationHealth_invariantDocument')}</p>
+        <p class="muted">${this.localize.term(term)}</p>
       </uui-box>`;
     }
     const key = this.#key ?? '';

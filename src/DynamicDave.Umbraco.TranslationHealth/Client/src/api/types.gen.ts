@@ -47,6 +47,7 @@ export type DocumentTranslationModel = {
 
 export type DocumentTranslationsResponse = {
     variesByCulture: boolean;
+    excluded: boolean;
     translations: Array<DocumentTranslationModel>;
 };
 
