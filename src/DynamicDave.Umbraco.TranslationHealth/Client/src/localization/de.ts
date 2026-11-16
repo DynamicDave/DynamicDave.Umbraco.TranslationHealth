@@ -55,7 +55,6 @@ export default {
     jobStatusCompleted: 'Abgeschlossen',
     jobStatusFailed: 'Fehlgeschlagen',
     jobStatusAborted: 'Abgebrochen',
-    jobErrorCancelled: 'Der Neuaufbau wurde abgebrochen.',
     jobErrorUnexpected: 'Der Neuaufbau ist unerwartet fehlgeschlagen. Siehe Protokoll.',
     planExpired: 'Dieser Testlauf ist abgelaufen. Laden Sie die Datei erneut hoch.',
     jobBusy: '{0} führt bereits einen Neuaufbau aus.',

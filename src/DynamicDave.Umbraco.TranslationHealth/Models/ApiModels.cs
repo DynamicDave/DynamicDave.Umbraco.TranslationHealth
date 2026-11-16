@@ -117,7 +117,6 @@ public sealed class JobStateModel
     public required string Phase { get; init; }
     public string? Error { get; init; }
     public string? Summary { get; init; }
-    public required bool CancelRequested { get; init; }
 }
 
 public sealed class StatusModel

@@ -235,7 +235,7 @@ public class ApiMappingTests
     [Fact]
     public void Job_state_maps_without_internal_result_pointers()
     {
-        var state = new JobState(Guid.NewGuid(), JobKind.Rebuild, JobStatus.Running, Guid.NewGuid(), "Dave", T0, T0, null, 3, 10, JobPhases.Indexing, null, null, null, "{}");
+        var state = new JobState(Guid.NewGuid(), JobKind.Rebuild, JobStatus.Running, Guid.NewGuid(), "Dave", T0, T0, null, 3, 10, JobPhases.Indexing, null, "{}");
 
         var model = ApiMapping.ToModel(state);
 

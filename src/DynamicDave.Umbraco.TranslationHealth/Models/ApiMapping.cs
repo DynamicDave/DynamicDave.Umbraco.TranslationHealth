@@ -106,7 +106,6 @@ public static class ApiMapping
         Phase = state.Phase,
         Error = state.Error,
         Summary = state.Summary,
-        CancelRequested = state.CancelRequested,
     };
 
     /// <summary>The status endpoint's data from the two stored values (the JSON of <see cref="IndexError"/> and an ISO date); unreadable values count as absent.</summary>

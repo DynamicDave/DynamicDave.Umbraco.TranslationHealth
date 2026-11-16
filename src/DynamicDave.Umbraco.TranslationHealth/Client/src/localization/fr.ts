@@ -55,7 +55,6 @@ export default {
     jobStatusCompleted: 'Terminé',
     jobStatusFailed: 'Échec',
     jobStatusAborted: 'Interrompu',
-    jobErrorCancelled: 'La reconstruction a été annulée.',
     jobErrorUnexpected: 'La reconstruction a échoué de façon inattendue. Consultez le journal.',
     planExpired: 'Ce test a expiré. Téléversez à nouveau le fichier.',
     jobBusy: '{0} exécute déjà une reconstruction.',

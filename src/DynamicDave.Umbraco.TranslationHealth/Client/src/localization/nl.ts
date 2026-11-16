@@ -55,7 +55,6 @@ export default {
     jobStatusCompleted: 'Voltooid',
     jobStatusFailed: 'Mislukt',
     jobStatusAborted: 'Afgebroken',
-    jobErrorCancelled: 'Het opnieuw opbouwen is geannuleerd.',
     jobErrorUnexpected: 'Het opnieuw opbouwen is onverwacht mislukt. Zie het logboek.',
     planExpired: 'Deze testrun is verlopen. Upload het bestand opnieuw.',
     jobBusy: '{0} is al bezig met opnieuw opbouwen.',

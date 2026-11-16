@@ -1,5 +1,4 @@
 using System.Text.Json.Serialization;
-using DynamicDave.Umbraco.TranslationHealth.Persistence;
 
 namespace DynamicDave.Umbraco.TranslationHealth.Jobs;
 
@@ -28,7 +27,7 @@ public static class JobPhases
 /// <summary>
 /// The one background job of the installation, stored as JSON in umbracoKeyValue under <see cref="Constants.JobStateKey"/>.
 /// <see cref="Phase"/> is one of <see cref="JobPhases"/> (empty before the first progress report); <see cref="Summary"/>
-/// is JSON with counts for the UI; <see cref="ResultKey"/> and <see cref="ResultKind"/> point at a <see cref="TempStore"/> entry.
+/// is JSON with counts for the UI.
 /// </summary>
 public record JobState(
     Guid Id,
@@ -42,19 +41,5 @@ public record JobState(
     int Done,
     int Total,
     string Phase,
-    Guid? ResultKey,
-    TempKind? ResultKind,
     string? Error,
-    string? Summary,
-    bool CancelRequested = false);
-
-/// <summary>
-/// Ends a job as <see cref="JobStatus.Failed"/> with a stable error code and, optionally,
-/// a summary for the UI.
-/// </summary>
-public sealed class JobFailedException(string error, string? summary = null) : Exception(error)
-{
-    public string Error { get; } = error;
-
-    public string? Summary { get; } = summary;
-}
+    string? Summary);

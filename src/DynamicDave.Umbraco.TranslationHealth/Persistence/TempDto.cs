@@ -3,7 +3,7 @@ using Umbraco.Cms.Infrastructure.Persistence.DatabaseAnnotations;
 
 namespace DynamicDave.Umbraco.TranslationHealth.Persistence;
 
-/// <summary>A test-run plan or job result, kept for <see cref="TempStore.TimeToLive"/>.</summary>
+/// <summary>A test-run plan, kept for <see cref="TempStore.TimeToLive"/>.</summary>
 [TableName(TableName)]
 [PrimaryKey("id", AutoIncrement = true)]
 [ExplicitColumns]

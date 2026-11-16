@@ -52,7 +52,7 @@ const FILE_ERRORS = new Set(['Unreadable', 'MissingKeyColumn', 'TooLarge', 'TooM
 export function errorTerm(code: string | null | undefined) {
   if (code && ERROR_CODES.has(code)) return `ddTranslationHealth_${code}`;
   if (code && FILE_ERRORS.has(code)) return `ddTranslationHealth_fileError${code}`;
-  if (code === 'Cancelled' || code === 'Unexpected') return `ddTranslationHealth_jobError${code}`;
+  if (code === 'Unexpected') return `ddTranslationHealth_jobError${code}`;
   return 'ddTranslationHealth_loadFailed';
 }
 

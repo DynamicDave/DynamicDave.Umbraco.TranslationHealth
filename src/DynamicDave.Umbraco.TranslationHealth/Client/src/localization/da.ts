@@ -55,7 +55,6 @@ export default {
     jobStatusCompleted: 'Gennemført',
     jobStatusFailed: 'Mislykkedes',
     jobStatusAborted: 'Afbrudt',
-    jobErrorCancelled: 'Genopbygningen blev annulleret.',
     jobErrorUnexpected: 'Genopbygningen mislykkedes uventet. Se loggen.',
     planExpired: 'Denne testkørsel er udløbet. Upload filen igen.',
     jobBusy: '{0} kører allerede en genopbygning.',

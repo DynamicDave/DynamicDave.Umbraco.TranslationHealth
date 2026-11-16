@@ -52,7 +52,7 @@ public class ApiJsonTests
         var job = new JobStateModel
         {
             Id = Guid.NewGuid(), Kind = JobKind.Rebuild, Status = JobStatus.Running, UserKey = Guid.NewGuid(), UserName = "Dave",
-            StartedUtc = DateTime.UtcNow, HeartbeatUtc = DateTime.UtcNow, Done = 1, Total = 2, Phase = JobPhases.Indexing, CancelRequested = false,
+            StartedUtc = DateTime.UtcNow, HeartbeatUtc = DateTime.UtcNow, Done = 1, Total = 2, Phase = JobPhases.Indexing,
         };
         Assert.Contains("\"kind\":\"Rebuild\"", Json(job));
         Assert.Contains("\"status\":\"Running\"", Json(job));

@@ -45,7 +45,8 @@ public sealed class RebuildJob(
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('\n', normalized))))[..16];
     }
 
-    public Task<(Guid? ResultKey, TempKind? ResultKind, string? Summary)> RunAsync(
+    /// <returns>The summary for the UI: JSON with the number of documents.</returns>
+    public Task<string?> RunAsync(
         IndexMode mode, JobProgress progress, CancellationToken cancellationToken)
     {
         if (mode == IndexMode.Save)
@@ -121,6 +122,6 @@ public sealed class RebuildJob(
         keyValues.SetValue(Constants.LastRebuildKey, timeProvider.GetUtcNow().UtcDateTime.ToString("o"));
 
         var summary = JsonSerializer.Serialize(new { documents = seen.Count });
-        return Task.FromResult<(Guid?, TempKind?, string?)>((null, null, summary));
+        return Task.FromResult<string?>(summary);
     }
 }

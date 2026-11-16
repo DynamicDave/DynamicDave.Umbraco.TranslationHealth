@@ -128,7 +128,6 @@ export type JobStateModel = {
     phase: string;
     error?: string | null;
     summary?: string | null;
-    cancelRequested: boolean;
 };
 
 export type JobStatus = 'Running' | 'Completed' | 'Failed' | 'Aborted';

@@ -52,7 +52,7 @@ public class RebuildJobTests
         return keys;
     }
 
-    private Task<(Guid?, TempKind?, string?)> Run(IndexMode mode = IndexMode.Rebuild, CancellationToken cancellationToken = default) =>
+    private Task<string?> Run(IndexMode mode = IndexMode.Rebuild, CancellationToken cancellationToken = default) =>
         _job.RunAsync(mode, NoProgress, cancellationToken);
 
     private static VariantRow StoredNl(Guid key, string? baseline) =>
@@ -119,10 +119,8 @@ public class RebuildJobTests
         _store.Save(new IndexResult(
             new DocumentRow(orphan, 99, null, "-1,99", "00099", 1, "page", Guid.Empty, "orphan"), [StoredNl(orphan, "x")]));
 
-        var (key, kind, summary) = await Run();
+        var summary = await Run();
 
-        Assert.Null(key);
-        Assert.Null(kind);
         Assert.Equal(450, JsonDocument.Parse(summary!).RootElement.GetProperty("documents").GetInt32());
         Assert.Equal(keys.Order(), _store.Keys.Order());
         Assert.Null(_store.GetDocument(orphan));

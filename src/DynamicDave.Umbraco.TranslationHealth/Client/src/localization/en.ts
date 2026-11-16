@@ -55,7 +55,6 @@ export default {
     jobStatusCompleted: 'Completed',
     jobStatusFailed: 'Failed',
     jobStatusAborted: 'Aborted',
-    jobErrorCancelled: 'The rebuild was cancelled.',
     jobErrorUnexpected: 'The rebuild failed unexpectedly. See the log.',
     planExpired: 'This test run has expired. Upload the file again.',
     jobBusy: '{0} is already running a rebuild.',

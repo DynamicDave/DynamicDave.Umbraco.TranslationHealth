@@ -1,7 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using DynamicDave.Umbraco.TranslationHealth.Indexing;
-using DynamicDave.Umbraco.TranslationHealth.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Umbraco.Cms.Core.Services;
@@ -28,12 +27,6 @@ public sealed class JobRunner(
     /// <summary><see cref="JobState.Error"/> of a job that failed with an unexpected exception (details are in the log).</summary>
     public const string UnexpectedError = "Unexpected";
 
-    /// <summary><see cref="JobState.Error"/> of a job that stopped after a cancel request (<see cref="RequestCancel"/>).</summary>
-    public const string CancelledError = "Cancelled";
-
-    // A running job writes its progress at most every 500 ms, so a few attempts always find a quiet moment.
-    private const int CancelAttempts = 20;
-
     /// <summary>Waits between the attempts of a job's final state write (one attempt plus one retry per delay).</summary>
     internal TimeSpan[] FinalWriteRetryDelays { get; init; } =
         [TimeSpan.FromMilliseconds(200), TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(1000)];
@@ -59,13 +52,14 @@ public sealed class JobRunner(
 
     /// <summary>
     /// Claims the job slot and runs <paramref name="work"/> in the background, in a new DI scope and without the
-    /// caller's ambient context (no ambient Umbraco scope). Returns the new state, or null when another job is running.
+    /// caller's ambient context (no ambient Umbraco scope). <paramref name="work"/> returns the summary for the UI.
+    /// Returns the new state, or null when another job is running.
     /// </summary>
     public JobState? TryStart(
         JobKind kind,
         Guid userKey,
         string userName,
-        Func<IServiceProvider, JobProgress, CancellationToken, Task<(Guid? ResultKey, TempKind? ResultKind, string? Summary)>> work)
+        Func<IServiceProvider, JobProgress, CancellationToken, Task<string?>> work)
     {
         ArgumentNullException.ThrowIfNull(work);
 
@@ -92,7 +86,7 @@ public sealed class JobRunner(
                 return null;
             }
 
-            var state = new JobState(Guid.NewGuid(), kind, JobStatus.Running, userKey, userName, now, now, null, 0, 0, string.Empty, null, null, null, null);
+            var state = new JobState(Guid.NewGuid(), kind, JobStatus.Running, userKey, userName, now, now, null, 0, 0, string.Empty, null, null);
             var json = Serialize(state);
             if (!_keyValues.TrySetValue(Constants.JobStateKey, raw, json))
             {
@@ -107,28 +101,6 @@ public sealed class JobRunner(
 
             return state;
         }
-    }
-
-    /// <summary>
-    /// Asks the running job to stop: stores <see cref="JobState.CancelRequested"/> with compare-and-set, so the request
-    /// reaches the job on whichever server runs it. The job sees it on its next progress write or heartbeat, cancels its
-    /// token and ends <see cref="JobStatus.Failed"/> with <see cref="CancelledError"/> (or Completed when its work
-    /// finished first). Returns the running job's state with the request, or null when no job is running.
-    /// </summary>
-    public JobState? RequestCancel()
-    {
-        for (var attempt = 0; attempt < CancelAttempts; attempt++)
-        {
-            var raw = _keyValues.GetValue(Constants.JobStateKey);
-            var current = Deserialize(raw);
-            if (raw is null || current is not { Status: JobStatus.Running } || IsStale(current, Now())) return null;
-            if (current.CancelRequested) return current;
-
-            var requested = current with { CancelRequested = true };
-            if (_keyValues.TrySetValue(Constants.JobStateKey, raw, Serialize(requested))) return requested;
-        }
-
-        throw new InvalidOperationException("Could not store the cancel request of translation health job; the job state kept changing.");
     }
 
     private static bool IsStale(JobState state, DateTime nowUtc) =>
@@ -157,9 +129,7 @@ public sealed class JobRunner(
 
     /// <summary>
     /// One running job. Every write is compare-and-set against the value this job wrote last: when another server took
-    /// over (this job's heartbeat went stale), the job stops writing and is cancelled. A cancel request
-    /// (<see cref="RequestCancel"/>) also makes the compare-and-set fail: the write then adopts the stored request,
-    /// cancels the token and writes again.
+    /// over (this job's heartbeat went stale), the job stops writing and its token is cancelled.
     /// </summary>
     private sealed class Run(JobRunner runner, JobState started, string startedRaw)
     {
@@ -169,13 +139,12 @@ public sealed class JobRunner(
         private JobState _state = started;
         private string _raw = startedRaw;
         private bool _closed;
-        private volatile bool _cancelRequested;
 
         // The last write that threw: it may have committed anyway.
         private (JobState State, string Json)? _unconfirmed;
 
         public async Task ExecuteAsync(
-            Func<IServiceProvider, JobProgress, CancellationToken, Task<(Guid? ResultKey, TempKind? ResultKind, string? Summary)>> work)
+            Func<IServiceProvider, JobProgress, CancellationToken, Task<string?>> work)
         {
             var progress = new JobProgress(runner._timeProvider, (done, total, phase) =>
                 Write(s => s with { Done = done, Total = total, Phase = phase, HeartbeatUtc = runner.Now() }, close: false),
@@ -198,17 +167,8 @@ public sealed class JobRunner(
                 try
                 {
                     await using var scope = runner._scopeFactory.CreateAsyncScope();
-                    var (key, kind, summary) = await work(scope.ServiceProvider, progress, _cancel.Token);
-                    final = Ended(JobStatus.Completed, s => s with { ResultKey = key, ResultKind = kind, Summary = summary });
-                }
-                catch (JobFailedException ex)
-                {
-                    final = Ended(JobStatus.Failed, s => s with { Error = ex.Error, Summary = ex.Summary });
-                }
-                catch (OperationCanceledException) when (_cancelRequested)
-                {
-                    runner._logger.LogInformation("Translation health {Kind} job {JobId} was cancelled", _started.Kind, _started.Id);
-                    final = Ended(JobStatus.Failed, s => s with { Error = CancelledError });
+                    var summary = await work(scope.ServiceProvider, progress, _cancel.Token);
+                    final = Ended(JobStatus.Completed, s => s with { Summary = summary });
                 }
                 catch (Exception ex)
                 {
@@ -252,14 +212,13 @@ public sealed class JobRunner(
             }
 
             runner._logger.LogError(
-                "Could not save the final state of translation health {Kind} job {JobId}: {Status}, result {ResultKey} ({ResultKind}), error {Error}",
-                _started.Kind, _started.Id, unsaved.Status, unsaved.ResultKey, unsaved.ResultKind, unsaved.Error);
+                "Could not save the final state of translation health {Kind} job {JobId}: {Status}, summary {Summary}, error {Error}",
+                _started.Kind, _started.Id, unsaved.Status, unsaved.Summary, unsaved.Error);
         }
 
         private WriteResult Write(Func<JobState, JobState> change, bool close)
         {
             WriteResult result;
-            var cancelSeen = false;
             lock (_gate)
             {
                 if (_closed)
@@ -276,15 +235,6 @@ public sealed class JobRunner(
                 {
                     _state = unconfirmed.State;
                     _raw = unconfirmed.Json;
-                    next = change(_state);
-                    json = Serialize(next);
-                    result = TrySet(json);
-                }
-
-                // A cancel request for this job changed the stored value: take it over and write again.
-                if (result == WriteResult.Lost && AdoptCancelRequest())
-                {
-                    cancelSeen = true;
                     next = change(_state);
                     json = Serialize(next);
                     result = TrySet(json);
@@ -308,7 +258,7 @@ public sealed class JobRunner(
                 }
             }
 
-            if (result == WriteResult.Lost || cancelSeen)
+            if (result == WriteResult.Lost)
             {
                 try
                 {
@@ -322,19 +272,6 @@ public sealed class JobRunner(
             }
 
             return result;
-        }
-
-        // True when the stored value is this job, still running, with a cancel request; it becomes the value to compare against.
-        private bool AdoptCancelRequest()
-        {
-            var raw = SafeRead();
-            if (Deserialize(raw) is not { Status: JobStatus.Running, CancelRequested: true } stored || stored.Id != _started.Id) return false;
-
-            _state = stored;
-            _raw = raw!;
-            _unconfirmed = null;
-            _cancelRequested = true;
-            return true;
         }
 
         private WriteResult TrySet(string json)
