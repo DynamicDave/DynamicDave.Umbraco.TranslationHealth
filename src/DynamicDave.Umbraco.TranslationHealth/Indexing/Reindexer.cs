@@ -116,16 +116,30 @@ public sealed class Reindexer(
     /// again: gone documents lose their rows, live ones are re-indexed. Works in chunks of <see cref="OrphanChunkSize"/>
     /// with the lock taken per chunk (a content load per candidate must not block the worker for long), one write per chunk.
     /// </summary>
-    /// <param name="beforeWrite">Called before each chunk that writes (e.g. to wait for editors to pause); a throw stops the removal.</param>
+    /// <param name="beforeWrite">
+    /// Called before each chunk that writes (e.g. to wait for editors to pause), outside the lock so the worker can index
+    /// meanwhile; a throw stops the removal.
+    /// </param>
     public void RemoveOrphans(IReadOnlySet<Guid> seen, KeyTracker tracker, IndexMode mode, Action? beforeWrite = null)
     {
         var candidates = store.GetKeys().Where(key => !seen.Contains(key)).ToList();
         foreach (var chunk in candidates.Chunk(OrphanChunkSize))
         {
+            // Every untracked candidate is stored and unseen, so it is either removed or re-indexed: the chunk writes.
+            bool writes;
+            lock (_gate) writes = chunk.Any(key => !tracker.Contains(key));
+            if (!writes)
+            {
+                continue;
+            }
+
+            beforeWrite?.Invoke();
             lock (_gate)
             {
                 var removals = new List<Guid>();
                 var live = new List<DocumentSnapshot>();
+
+                // Checked again: the worker may have handled some of them while beforeWrite waited.
                 foreach (var key in chunk.Where(key => !tracker.Contains(key)))
                 {
                     var snapshot = snapshots.Get(key);
@@ -139,13 +153,7 @@ public sealed class Reindexer(
                     }
                 }
 
-                var results = Compute(live, mode);
-                if (results.Count > 0 || removals.Count > 0)
-                {
-                    beforeWrite?.Invoke();
-                }
-
-                Write(results, removals);
+                Write(Compute(live, mode), removals);
             }
         }
     }

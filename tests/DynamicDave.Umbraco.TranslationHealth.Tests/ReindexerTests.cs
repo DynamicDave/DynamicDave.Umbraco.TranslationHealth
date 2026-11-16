@@ -207,4 +207,30 @@ public class ReindexerTests
         _reindexer.Reindex(key, IndexMode.Save);
         Assert.Equal(BaselineSource.MarkedUpToDate, _store.GetVariants(key).Single(v => v.Culture == Nl).BaselineSource);
     }
+
+    [Fact]
+    public void Orphan_removal_waits_for_editors_without_holding_the_lock()
+    {
+        var orphan = Guid.NewGuid();
+        _store.SaveMany([new IndexResult(new DocumentRow(orphan, 9, null, "-1,9", "00009", 1, "page", Guid.Empty, "gone"), [])], []);
+        var saved = Guid.NewGuid();
+        AddDocument(saved, 1, "a", "b");
+        using var tracker = _reindexer.BeginTracking();
+
+        // While the rebuild waits for editors to pause, the worker must be able to index their saves.
+        var indexedMeanwhile = false;
+        _reindexer.RemoveOrphans(new HashSet<Guid>(), tracker, IndexMode.Rebuild, () =>
+        {
+            var done = new ManualResetEventSlim();
+            _ = Task.Run(() =>
+            {
+                _reindexer.Reindex(saved, IndexMode.Save);
+                done.Set();
+            });
+            indexedMeanwhile = done.Wait(TimeSpan.FromSeconds(2));
+        });
+
+        Assert.True(indexedMeanwhile);
+        Assert.Equal([saved], _store.GetKeys());
+    }
 }
