@@ -14,8 +14,11 @@ namespace DynamicDave.Umbraco.TranslationHealth.Jobs;
 /// <summary>
 /// Re-indexes every culture-variant document, then removes the rows of documents that no longer qualify. A rebuild keeps
 /// existing baselines and marks (<see cref="IndexMode.Rebuild"/>) unless the default language changed
-/// (<see cref="IndexMode.RebuildClearBaselines"/>). Documents indexed by the worker while it runs are left alone. Before each
-/// write it waits for editors to pause (<see cref="EditorActivity"/>), at most 30 seconds.
+/// (<see cref="IndexMode.RebuildClearBaselines"/>); a normal rebuild is upgraded to a clearing one when the default
+/// language differs from the stored one (a clearing rebuild that failed leaves the old one stored). Documents indexed by
+/// the worker while it runs are skipped by the pass; a clearing rebuild re-indexes them at the end, because the worker's
+/// Save mode kept their old baselines. Before each write it waits for editors to pause (<see cref="EditorActivity"/>), at
+/// most 30 seconds.
 /// </summary>
 public sealed class RebuildJob(
     IContentSnapshotSource snapshots,
@@ -52,6 +55,12 @@ public sealed class RebuildJob(
 
         // What the rebuild is based on, stored once it is complete.
         var defaultCulture = sites.DefaultCulture();
+        if (mode == IndexMode.Rebuild
+            && RebuildScheduler.DefaultCultureChanged(keyValues.GetValue(Constants.DefaultCultureKey), defaultCulture))
+        {
+            mode = IndexMode.RebuildClearBaselines;
+        }
+
         var excludedHash = ExcludedTypesHash(options.CurrentValue.ExcludedDocumentTypes);
 
         using var tracking = reindexer.BeginTracking();
@@ -85,6 +94,15 @@ public sealed class RebuildJob(
         progress.Report(seen.Count, seen.Count, JobPhases.RemovingOrphans);
         activity.WaitUntilQuiet(cancellationToken);
         reindexer.RemoveOrphans(seen, tracking, mode, () => activity.WaitUntilQuiet(cancellationToken));
+
+        // The worker indexed some documents meanwhile in Save mode, which keeps the baselines of the previous rows, and the
+        // pass skipped them. Once their rows are cleared, a later save cannot bring an old baseline back: Save mode takes
+        // the baseline from the (cleared) previous rows or from the current default-language text.
+        if (mode == IndexMode.RebuildClearBaselines)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            reindexer.ReindexTracked(tracking, mode, () => activity.WaitUntilQuiet(cancellationToken));
+        }
 
         // IKeyValueService has no bulk write: every key is its own commit, so each waits for editors too.
         activity.WaitUntilQuiet(cancellationToken);

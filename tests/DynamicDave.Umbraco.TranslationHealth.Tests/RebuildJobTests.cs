@@ -176,6 +176,51 @@ public class RebuildJobTests
     }
 
     [Fact]
+    public async Task Manual_rebuild_after_a_failed_clearing_rebuild_clears_baselines()
+    {
+        // The default language was de-DE when the status was built; it is en-US now.
+        _keyValues.SetValue(Constants.DefaultCultureKey, "de-DE");
+        var key = Guid.NewGuid();
+        _source.Add(Doc(key, 1));
+        _store.Save(new IndexResult(
+            new DocumentRow(key, 1, null, "-1,1", "00001", 1, "page", Guid.Empty, "n"), [StoredNl(key, "old-baseline")]));
+        _source.OnGetPage = _ => throw new InvalidOperationException("Database gone");
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Run(IndexMode.RebuildClearBaselines));
+        _source.OnGetPage = null;
+
+        await Run(IndexMode.Rebuild);
+
+        var nl = _store.GetVariants(key).Single(v => v.Culture == Nl);
+        Assert.Null(nl.BaselineFingerprint);
+        Assert.Null(nl.BaselineSource);
+        Assert.Equal(En, _keyValues.GetValue(Constants.DefaultCultureKey));
+    }
+
+    [Fact]
+    public async Task Save_during_a_clearing_rebuild_ends_without_old_baselines()
+    {
+        var key = Guid.NewGuid();
+        _source.Add(Doc(key, 1));
+        _store.Save(new IndexResult(
+            new DocumentRow(key, 1, null, "-1,1", "00001", 1, "page", Guid.Empty, "n"), [StoredNl(key, "old-baseline")]));
+
+        // The worker indexes the document (Save mode keeps the stored baseline) after the page was read: the rebuild then skips it.
+        _source.OnGetPage = _ =>
+        {
+            _source.OnGetPage = null;
+            _reindexer.Reindex(key, IndexMode.Save);
+        };
+
+        await Run(IndexMode.RebuildClearBaselines);
+
+        Assert.Null(_store.GetVariants(key).Single(v => v.Culture == Nl).BaselineFingerprint);
+
+        // A later save does not bring the old baseline back either.
+        _reindexer.Reindex(key, IndexMode.Save);
+        Assert.Null(_store.GetVariants(key).Single(v => v.Culture == Nl).BaselineFingerprint);
+    }
+
+    [Fact]
     public async Task Rebuild_keeps_documents_indexed_while_it_ran()
     {
         AddDocuments(250);

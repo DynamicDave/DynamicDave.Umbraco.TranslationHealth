@@ -152,6 +152,23 @@ public sealed class Reindexer(
 
     public const int OrphanChunkSize = 200;
 
+    /// <summary>
+    /// Re-indexes, from fresh snapshots read under the lock, every document touched while <paramref name="tracker"/> was
+    /// active, in chunks of <see cref="OrphanChunkSize"/> with one write each. A clearing rebuild uses it at the end. A
+    /// document touched again after its chunk was written is indexed from rows that are already cleared.
+    /// </summary>
+    /// <param name="beforeWrite">Called before each chunk, outside the lock (e.g. to wait for editors to pause); a throw stops it.</param>
+    public void ReindexTracked(KeyTracker tracker, IndexMode mode, Action? beforeWrite = null)
+    {
+        List<Guid> keys;
+        lock (_gate) keys = [.. tracker.Keys];
+        foreach (var chunk in keys.Chunk(OrphanChunkSize))
+        {
+            beforeWrite?.Invoke();
+            IndexBatch(chunk.Select(key => (key, false)).ToList(), mode);
+        }
+    }
+
     private void Write(IReadOnlyList<IndexResult> results, IReadOnlyCollection<Guid> removals)
     {
         try
@@ -218,6 +235,8 @@ public sealed class Reindexer(
         internal void Add(Guid key) => _keys.Add(key);
 
         internal bool Contains(Guid key) => _keys.Contains(key);
+
+        internal IEnumerable<Guid> Keys => _keys;
 
         public void Dispose()
         {
