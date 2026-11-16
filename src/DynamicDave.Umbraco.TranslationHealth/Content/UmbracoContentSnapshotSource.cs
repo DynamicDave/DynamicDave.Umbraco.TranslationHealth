@@ -23,11 +23,11 @@ public static class SnapshotBuilder
     /// noise (layout Udi fields differ between Umbraco 17 and 18, empty rich text blocks are normalised on save).
     /// </summary>
     public static IReadOnlyList<PropertyText> CultureTexts(
-        IEnumerable<(string Alias, bool VariesByCulture, string? EditorAlias, Func<string?, object?> GetValue)> properties,
+        IEnumerable<(string Alias, bool VariesByCulture, Func<string?, object?> GetValue)> properties,
         string culture)
     {
         var result = new List<PropertyText>();
-        foreach (var (alias, variesByCulture, _, getValue) in properties)
+        foreach (var (alias, variesByCulture, getValue) in properties)
         {
             if (!variesByCulture)
             {
@@ -274,7 +274,6 @@ public sealed class UmbracoContentSnapshotSource(
             content.Properties.Select(property => (
                 property.Alias,
                 (property.PropertyType.Variations & ContentVariation.Culture) != 0,
-                (string?)property.PropertyType.PropertyEditorAlias,
                 (Func<string?, object?>)(c => content.GetValue(property.Alias, c, null, published)))),
             culture);
 

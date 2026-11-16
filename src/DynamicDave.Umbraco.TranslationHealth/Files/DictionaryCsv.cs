@@ -2,9 +2,6 @@ using DynamicDave.Umbraco.TranslationHealth.Dictionary;
 
 namespace DynamicDave.Umbraco.TranslationHealth.Files;
 
-/// <summary>Which dictionary items to export; both null = all. Applied by the caller.</summary>
-public sealed record ExportSelection(string? MissingIn, string? Group);
-
 public static class DictionaryCsv
 {
     private const string KeyHeader = "Key";

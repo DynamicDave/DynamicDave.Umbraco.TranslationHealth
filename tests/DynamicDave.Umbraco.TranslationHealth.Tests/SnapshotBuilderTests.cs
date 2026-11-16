@@ -6,9 +6,9 @@ public class SnapshotBuilderTests
 {
     private const string Key1 = "9ffa301c-590f-4fbe-8841-b51e0629d006";
 
-    private static (string Alias, bool VariesByCulture, string? EditorAlias, Func<string?, object?> GetValue) Property(
-        string alias, bool varies, Func<string?, object?> getValue, string? editor = null)
-        => (alias, varies, editor, getValue);
+    private static (string Alias, bool VariesByCulture, Func<string?, object?> GetValue) Property(
+        string alias, bool varies, Func<string?, object?> getValue)
+        => (alias, varies, getValue);
 
     private static string BlockList(string layoutItem, string headlineEn = "Hello", string headlineNl = "Hallo")
         => "{\"contentData\":[{\"contentTypeKey\":\"b995c5dc-e0fe-4bf1-9a14-dde13ef7d655\",\"key\":\"" + Key1 + "\",\"values\":["
@@ -58,7 +58,7 @@ public class SnapshotBuilderTests
     {
         var rte = "{\"markup\":\"<p>Text</p>\",\"blocks\":" + BlockList("{\"contentKey\":\"" + Key1 + "\"}") + "}";
 
-        var texts = SnapshotBuilder.CultureTexts([Property("rte", true, _ => rte, "Umbraco.RichText")], "en-US");
+        var texts = SnapshotBuilder.CultureTexts([Property("rte", true, _ => rte)], "en-US");
 
         Assert.Equal(
             [
