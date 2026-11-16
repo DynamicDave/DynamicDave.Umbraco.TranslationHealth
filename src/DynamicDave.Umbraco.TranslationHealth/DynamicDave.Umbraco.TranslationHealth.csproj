@@ -8,7 +8,7 @@
 
   <PropertyGroup>
     <PackageId>DynamicDave.Umbraco.TranslationHealth</PackageId>
-    <Description>Shows which pages are translated, missing, outdated or unpublished per language, and lets you export and import translations and dictionary items as CSV or XLIFF.</Description>
+    <Description>Shows which pages are translated, missing, outdated or unpublished per language, and adds dictionary tools: a missing-translations report, and dictionary export and import as CSV or XLIFF with a test run, history and undo.</Description>
     <PackageTags>umbraco-marketplace;umbraco;backoffice;translation;multilingual;dictionary;xliff;csv</PackageTags>
     <Product>DynamicDave.Umbraco.TranslationHealth</Product>
     <Title>DynamicDave.Umbraco.TranslationHealth</Title>
