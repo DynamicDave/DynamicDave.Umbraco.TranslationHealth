@@ -89,6 +89,28 @@ public class ReindexProcessorTests
     }
 
     [Fact]
+    public void A_later_good_batch_keeps_the_error_of_a_document_that_failed()
+    {
+        // The failing document is in the first batch; the second batch of the same run goes well.
+        var keys = Enumerable.Range(1, ReindexProcessor.BatchSize + 10).Select(AddDocument).ToList();
+        _source.FailFor.Add(keys[0]);
+        _queue.Enqueue(keys);
+        _processor.ProcessPending();
+        Assert.Equal("Broken", JsonSerializer.Deserialize<IndexError>(_keyValues.GetValue(Constants.LastIndexErrorKey)!)!.Message);
+
+        // Neither does a later run that does not include it.
+        _queue.Enqueue([AddDocument(1000)]);
+        _processor.ProcessPending();
+        Assert.Equal("Broken", JsonSerializer.Deserialize<IndexError>(_keyValues.GetValue(Constants.LastIndexErrorKey)!)!.Message);
+
+        // Once the document is indexed, the error goes.
+        _source.FailFor.Clear();
+        _queue.Enqueue([keys[0]]);
+        _processor.ProcessPending();
+        Assert.Equal(string.Empty, _keyValues.GetValue(Constants.LastIndexErrorKey));
+    }
+
+    [Fact]
     public void A_failing_write_puts_the_batch_back_without_retrying_one_by_one()
     {
         var keys = new[] { AddDocument(1), AddDocument(2), AddDocument(3) };

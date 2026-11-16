@@ -25,6 +25,10 @@ public sealed class ReindexProcessor(
 
     public static readonly TimeSpan MaxRetryDelay = TimeSpan.FromMinutes(5);
 
+    // Documents that failed for good (not a write failure) and were not indexed since: the stored error stays while there
+    // are any. In memory only: after a restart the next good batch clears the error.
+    private readonly HashSet<Guid> _failedKeys = [];
+
     private int _writeFailures;
     private DateTimeOffset _retryAfter = DateTimeOffset.MinValue;
 
@@ -73,6 +77,7 @@ public sealed class ReindexProcessor(
         try
         {
             reindexer.IndexBatch(batch, IndexMode.Save);
+            _failedKeys.ExceptWith(batch.Select(item => item.Key));
         }
         catch (IndexWriteException ex)
         {
@@ -89,6 +94,7 @@ public sealed class ReindexProcessor(
                 try
                 {
                     reindexer.IndexBatch([item], IndexMode.Save);
+                    _failedKeys.Remove(item.Key);
                 }
                 catch (IndexWriteException ex)
                 {
@@ -99,6 +105,7 @@ public sealed class ReindexProcessor(
                 catch (Exception ex)
                 {
                     logger.LogError(ex, "Translation health could not update the status of document {DocumentKey}", item.Key);
+                    _failedKeys.Add(item.Key);
                     error = ex.Message;
                 }
             }
@@ -112,7 +119,7 @@ public sealed class ReindexProcessor(
                     Constants.LastIndexErrorKey,
                     JsonSerializer.Serialize(new IndexError(timeProvider.GetUtcNow().UtcDateTime, error)));
             }
-            else if (!string.IsNullOrEmpty(keyValues.GetValue(Constants.LastIndexErrorKey)))
+            else if (_failedKeys.Count == 0 && !string.IsNullOrEmpty(keyValues.GetValue(Constants.LastIndexErrorKey)))
             {
                 keyValues.SetValue(Constants.LastIndexErrorKey, string.Empty);
             }
