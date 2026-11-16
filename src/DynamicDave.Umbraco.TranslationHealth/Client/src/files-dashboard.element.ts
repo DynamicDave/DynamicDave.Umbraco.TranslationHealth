@@ -28,6 +28,9 @@ import {
   sharedStyles,
 } from './shared.js';
 
+/** The server's upload limit (DictionaryTranslationsController.MaxUploadBytes): a larger file is refused before it is sent. */
+const MAX_UPLOAD_BYTES = 10_000_000;
+
 /** The server's page limit for plan items (Paging.MaxPlanItemsTake): a large test run loads in few requests. */
 const ITEMS_TAKE = 1000;
 
@@ -222,6 +225,14 @@ export class DdTranslationHealthImportElement extends UmbLitElement {
     const file = input.files?.[0];
     input.value = ''; // the same file can be chosen again
     if (!file) return;
+    if (file.size > MAX_UPLOAD_BYTES) {
+      // The server would refuse the request before it can answer with a reason.
+      this.#clear();
+      this.#file = undefined;
+      this._result = undefined;
+      this._message = this.localize.term('ddTranslationHealth_fileErrorTooLarge');
+      return;
+    }
     this.#file = file;
     void this.#upload();
   }
