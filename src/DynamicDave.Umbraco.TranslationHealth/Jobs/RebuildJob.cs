@@ -84,10 +84,14 @@ public sealed class RebuildJob(
         cancellationToken.ThrowIfCancellationRequested();
         progress.Report(seen.Count, seen.Count, JobPhases.RemovingOrphans);
         activity?.WaitUntilQuiet(cancellationToken);
-        reindexer.RemoveOrphans(seen, tracking, mode);
+        reindexer.RemoveOrphans(seen, tracking, mode, () => activity?.WaitUntilQuiet(cancellationToken));
 
+        // IKeyValueService has no bulk write: every key is its own commit, so each waits for editors too.
+        activity?.WaitUntilQuiet(cancellationToken);
         keyValues.SetValue(Constants.DefaultCultureKey, defaultCulture);
+        activity?.WaitUntilQuiet(cancellationToken);
         keyValues.SetValue(Constants.ExcludedTypesKey, excludedHash);
+        activity?.WaitUntilQuiet(cancellationToken);
         keyValues.SetValue(Constants.LastRebuildKey, timeProvider.GetUtcNow().UtcDateTime.ToString("o"));
 
         var summary = JsonSerializer.Serialize(new { documents = seen.Count });

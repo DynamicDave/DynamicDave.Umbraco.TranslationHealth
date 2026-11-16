@@ -116,7 +116,8 @@ public sealed class Reindexer(
     /// again: gone documents lose their rows, live ones are re-indexed. Works in chunks of <see cref="OrphanChunkSize"/>
     /// with the lock taken per chunk (a content load per candidate must not block the worker for long), one write per chunk.
     /// </summary>
-    public void RemoveOrphans(IReadOnlySet<Guid> seen, KeyTracker tracker, IndexMode mode)
+    /// <param name="beforeWrite">Called before each chunk that writes (e.g. to wait for editors to pause); a throw stops the removal.</param>
+    public void RemoveOrphans(IReadOnlySet<Guid> seen, KeyTracker tracker, IndexMode mode, Action? beforeWrite = null)
     {
         var candidates = store.GetKeys().Where(key => !seen.Contains(key)).ToList();
         foreach (var chunk in candidates.Chunk(OrphanChunkSize))
@@ -138,7 +139,13 @@ public sealed class Reindexer(
                     }
                 }
 
-                Write(Compute(live, mode), removals);
+                var results = Compute(live, mode);
+                if (results.Count > 0 || removals.Count > 0)
+                {
+                    beforeWrite?.Invoke();
+                }
+
+                Write(results, removals);
             }
         }
     }
