@@ -13,7 +13,7 @@ using DynamicDave.Umbraco.TranslationHealth.Status;
 
 namespace DynamicDave.Umbraco.TranslationHealth.Models;
 
-/// <summary>A test-run plan as kept in the <see cref="TempStore"/>: the plan and the user who made it.</summary>
+/// <summary>A test-run plan as kept in the <see cref="ITempStore"/>: the plan and the user who made it.</summary>
 public sealed record StoredPlan(Guid UserKey, ImportPlan Plan);
 
 /// <summary>Request validation and the mapping between the package's records and the API models. Pure: no services.</summary>

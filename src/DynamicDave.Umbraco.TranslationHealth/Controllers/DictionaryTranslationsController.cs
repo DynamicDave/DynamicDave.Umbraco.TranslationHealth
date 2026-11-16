@@ -28,7 +28,7 @@ public class DictionaryTranslationsController(
     IDictionarySource dictionary,
     ISiteSource sites,
     ILanguageService languageService,
-    TempStore tempStore,
+    PlanStore plans,
     IImportHistory history,
     ImportApplier applier,
     ImportUndoer undoer,
@@ -151,7 +151,7 @@ public class DictionaryTranslationsController(
             AccessPolicy.EditableCultures(user.Groups, languages),
             installed.ToHashSet(StringComparer.OrdinalIgnoreCase),
             new ImportOptions(overwrite, createKeys));
-        tempStore.Put(plan.Id, TempKind.Plan, ApiMapping.SerializePlan(user.Key, plan), plan.FileName);
+        plans.Put(user.Key, plan);
         return Ok(ApiMapping.ToPlanResponse(plan));
     }
 
@@ -163,7 +163,7 @@ public class DictionaryTranslationsController(
     public IActionResult GetImportPlanItems(Guid planId, [FromQuery] ImportOutcome[]? outcome = null, [FromQuery] int skip = 0, [FromQuery] int take = Paging.FirstPageSize)
     {
         if (CurrentUser() is not { } user) return Unauthorized();
-        if (!Paging.IsValid(skip, take)) return Error(ApiErrors.InvalidPaging);
+        if (!Paging.IsValid(skip, take, Paging.MaxPlanItemsTake)) return Error(ApiErrors.InvalidPaging);
 
         // Model binding accepts any number for an enum.
         if (outcome is not null && !outcome.All(o => Enum.IsDefined(o))) return Error(ApiErrors.InvalidFilter);
@@ -195,7 +195,7 @@ public class DictionaryTranslationsController(
         if (!valid) return Error(ApiErrors.InvalidSelection);
 
         // Whoever deletes the plan first applies it.
-        if (!tempStore.Delete(planId, TempKind.Plan)) return NotFoundError(ApiErrors.PlanExpired);
+        if (!plans.Claim(planId)) return NotFoundError(ApiErrors.PlanExpired);
 
         try
         {
@@ -282,11 +282,8 @@ public class DictionaryTranslationsController(
         }
     }
 
-    // The plan, when it exists, has not expired and was made by this user (someone else's plan is as good as not there).
-    private ImportPlan? LoadPlan(Guid planId, IUser user)
-        => tempStore.Get(planId, TempKind.Plan) is { } entry && ApiMapping.ReadPlan(entry.Content) is { } stored && stored.UserKey == user.Key
-            ? stored.Plan
-            : null;
+    // The plan, when it exists, has not expired and was made by this user (checked on every request).
+    private ImportPlan? LoadPlan(Guid planId, IUser user) => plans.Get(planId, user.Key);
 
     // The installed ISO code spelled as Umbraco has it, or null.
     private static string? Installed(IEnumerable<ILanguage> languages, string? culture)

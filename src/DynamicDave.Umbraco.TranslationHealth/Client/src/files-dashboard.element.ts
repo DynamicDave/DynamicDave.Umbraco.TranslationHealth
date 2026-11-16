@@ -28,8 +28,8 @@ import {
   sharedStyles,
 } from './shared.js';
 
-/** The server's page limit for plan items. */
-const ITEMS_TAKE = 100;
+/** The server's page limit for plan items (Paging.MaxPlanItemsTake): a large test run loads in few requests. */
+const ITEMS_TAKE = 1000;
 
 /** Outcomes that can be written; the others (unchanged, skipped, error) have no checkbox. */
 const SELECTABLE: ImportOutcome[] = ['NewValue', 'Overwrite', 'NewKey'];

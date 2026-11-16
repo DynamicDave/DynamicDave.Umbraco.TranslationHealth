@@ -11,19 +11,18 @@ public enum TempKind
     Plan,
 }
 
-public sealed record TempEntry(string Content, string? FileName);
+public sealed record TempEntry(string Content, string? FileName, DateTime CreatedUtc);
 
 /// <summary>
-/// Test-run plans and job results for one hour, in the database so every server behind a load balancer sees them.
-/// Expired entries are deleted on every access.
+/// Test-run plans for one hour, in the database so every server behind a load balancer sees them. Reading only reads:
+/// expired entries are filtered out there and deleted by the writes (<see cref="Put"/> and <see cref="Delete"/>).
 /// </summary>
-public sealed class TempStore(IScopeProvider scopeProvider, TimeProvider timeProvider)
+public sealed class TempStore(IScopeProvider scopeProvider, TimeProvider timeProvider) : ITempStore
 {
     public static readonly TimeSpan TimeToLive = TimeSpan.FromHours(1);
 
     public static bool IsExpired(DateTime createdUtc, DateTime nowUtc) => createdUtc < nowUtc - TimeToLive;
 
-    /// <summary>Stores the content under the key and kind, replacing an earlier entry with the same key and kind.</summary>
     public void Put(Guid key, TempKind kind, string content, string? fileName)
     {
         var now = Now();
@@ -43,23 +42,17 @@ public sealed class TempStore(IScopeProvider scopeProvider, TimeProvider timePro
         scope.Complete();
     }
 
-    /// <summary>The entry, or null when it does not exist or has expired.</summary>
     public TempEntry? Get(Guid key, TempKind kind)
     {
-        var now = Now();
+        // The same rule as IsExpired: entries created before now - TimeToLive have expired.
+        var cutoff = Now() - TimeToLive;
         var kindValue = (int)kind;
-        using var scope = scopeProvider.CreateScope();
-        DeleteExpired(scope, now);
+        using var scope = scopeProvider.CreateScope(autoComplete: true);
         var dto = scope.Database.FirstOrDefault<TempDto>(scope.SqlContext.Sql()
-            .Select<TempDto>().From<TempDto>().Where<TempDto>(x => x.Key == key && x.Kind == kindValue));
-        scope.Complete();
-        return dto is null || IsExpired(dto.CreatedUtc, now) ? null : new TempEntry(dto.Content, dto.FileName);
+            .Select<TempDto>().From<TempDto>().Where<TempDto>(x => x.Key == key && x.Kind == kindValue && x.CreatedUtc >= cutoff));
+        return dto is null ? null : new TempEntry(dto.Content, dto.FileName, dto.CreatedUtc);
     }
 
-    /// <summary>
-    /// Removes the entry. True only for the one caller that removed it (a single DELETE), so a plan can be claimed once,
-    /// also by two concurrent requests; false when it does not exist, has expired or was claimed already.
-    /// </summary>
     public bool Delete(Guid key, TempKind kind)
     {
         var now = Now();

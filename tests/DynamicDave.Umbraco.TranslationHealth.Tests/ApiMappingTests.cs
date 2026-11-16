@@ -253,4 +253,10 @@ public class ApiMappingTests
     [InlineData(0, 0, false)]
     [InlineData(0, 101, false)]
     public void Paging_is_validated(int skip, int take, bool valid) => Assert.Equal(valid, Paging.IsValid(skip, take));
+
+    [Theory]
+    [InlineData(1000, true)]
+    [InlineData(1001, false)]
+    public void Plan_items_come_in_pages_of_up_to_1000(int take, bool valid)
+        => Assert.Equal(valid, Paging.IsValid(0, take, Paging.MaxPlanItemsTake));
 }

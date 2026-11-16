@@ -27,7 +27,8 @@ public class TranslationHealthComposer : IComposer
         // The tables are created by TranslationHealthMigrationPlan, which Umbraco discovers by itself.
         builder.Services.AddSingleton<ITranslationStatusStore, TranslationStatusStore>();
         builder.Services.AddSingleton<IImportHistory, ImportHistory>();
-        builder.Services.AddSingleton<TempStore>();
+        builder.Services.AddSingleton<ITempStore, TempStore>();
+        builder.Services.AddSingleton<PlanStore>();
         builder.Services.AddSingleton<ImportApplier>();
         builder.Services.AddSingleton<ImportUndoer>();
 
