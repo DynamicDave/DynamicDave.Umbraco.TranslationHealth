@@ -43,7 +43,7 @@ public class ReindexProcessorTests
     {
         var keys = Enumerable.Range(1, 450).Select(AddDocument).ToList();
         var gone = Guid.NewGuid();
-        _store.Save(new IndexResult(new DocumentRow(gone, 999, null, "-1,999", "00999", 1, "page", Guid.Empty, "n"), []));
+        _store.Seed(new IndexResult(new DocumentRow(gone, 999, null, "-1,999", "00999", 1, "page", Guid.Empty, "n"), []));
         _queue.Enqueue(keys);
         _queue.EnqueueRemoval([gone]);
 
@@ -65,7 +65,7 @@ public class ReindexProcessorTests
 
         _processor.ProcessPending();
 
-        Assert.NotNull(_store.GetDocument(good));
+        Assert.NotNull(_store.Document(good));
         Assert.Contains(_log.Entries, e => e.Level == LogLevel.Error && e.Message.Contains(bad.ToString()));
         var error = JsonSerializer.Deserialize<IndexError>(_keyValues.GetValue(Constants.LastIndexErrorKey)!)!;
         Assert.Equal("Broken", error.Message);

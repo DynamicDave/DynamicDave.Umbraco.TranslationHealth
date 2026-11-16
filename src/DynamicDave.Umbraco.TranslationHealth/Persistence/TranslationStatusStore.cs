@@ -50,16 +50,6 @@ public sealed class TranslationStatusStore(IScopeProvider scopeProvider) : ITran
         return scope.Database.Fetch<Guid>(scope.SqlContext.Sql().Select<DocumentDto>(x => x.Key).From<DocumentDto>());
     }
 
-    public DocumentRow? GetDocument(Guid key)
-    {
-        using var scope = scopeProvider.CreateScope(autoComplete: true);
-        var dto = scope.Database.FirstOrDefault<DocumentDto>(scope.SqlContext.Sql()
-            .Select<DocumentDto>().From<DocumentDto>().Where<DocumentDto>(x => x.Key == key));
-        return dto is null ? null : StatusRowMapping.ToRow(dto);
-    }
-
-    public void Save(IndexResult result) => SaveMany([result], []);
-
     public void SaveMany(IReadOnlyList<IndexResult> results, IReadOnlyCollection<Guid> removals)
     {
         if (results.Count == 0 && removals.Count == 0)
@@ -92,24 +82,6 @@ public sealed class TranslationStatusStore(IScopeProvider scopeProvider) : ITran
             .Where<VariantDto>(x => x.DocumentKey == key && x.Culture == culture));
         scope.Database.Insert(StatusRowMapping.ToDto(row));
         scope.Complete();
-    }
-
-    public void Remove(IReadOnlyCollection<Guid> documentKeys)
-    {
-        if (documentKeys.Count == 0)
-        {
-            return;
-        }
-
-        using var scope = scopeProvider.CreateScope();
-        RemoveKeys(scope, documentKeys);
-        scope.Complete();
-    }
-
-    public int Count()
-    {
-        using var scope = scopeProvider.CreateScope(autoComplete: true);
-        return scope.Database.ExecuteScalar<int>(scope.SqlContext.Sql().SelectCount().From<DocumentDto>());
     }
 
     private static void RemoveKeys(IScope scope, IReadOnlyCollection<Guid> keys)

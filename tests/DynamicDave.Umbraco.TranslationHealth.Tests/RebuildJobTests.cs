@@ -85,7 +85,7 @@ public class RebuildJobTests
         for (var i = 0; i < 450; i++)
         {
             var orphan = Guid.NewGuid();
-            _store.Save(new IndexResult(
+            _store.Seed(new IndexResult(
                 new DocumentRow(orphan, 10_000 + i, null, $"-1,{10_000 + i}", "00099", 1, "page", Guid.Empty, "orphan"), [StoredNl(orphan, "x")]));
         }
 
@@ -116,14 +116,14 @@ public class RebuildJobTests
     {
         var keys = AddDocuments(450);
         var orphan = Guid.NewGuid();
-        _store.Save(new IndexResult(
+        _store.Seed(new IndexResult(
             new DocumentRow(orphan, 99, null, "-1,99", "00099", 1, "page", Guid.Empty, "orphan"), [StoredNl(orphan, "x")]));
 
         var summary = await Run();
 
         Assert.Equal(450, JsonDocument.Parse(summary!).RootElement.GetProperty("documents").GetInt32());
         Assert.Equal(keys.Order(), _store.Keys.Order());
-        Assert.Null(_store.GetDocument(orphan));
+        Assert.Null(_store.Document(orphan));
         Assert.Empty(_store.GetVariants(orphan));
         Assert.All(keys, k => Assert.Equal(2, _store.GetVariants(k).Count));
         Assert.Equal(3, _source.GetPageCalls); // pages of 200, 200 and 50
@@ -147,7 +147,7 @@ public class RebuildJobTests
     {
         var key = Guid.NewGuid();
         _source.Add(Doc(key, 1));
-        _store.Save(new IndexResult(
+        _store.Seed(new IndexResult(
             new DocumentRow(key, 1, null, "-1,1", "00001", 1, "page", Guid.Empty, "n"), [StoredNl(key, "old-baseline")]));
 
         await Run(IndexMode.Rebuild);
@@ -162,7 +162,7 @@ public class RebuildJobTests
     {
         var key = Guid.NewGuid();
         _source.Add(Doc(key, 1));
-        _store.Save(new IndexResult(
+        _store.Seed(new IndexResult(
             new DocumentRow(key, 1, null, "-1,1", "00001", 1, "page", Guid.Empty, "n"), [StoredNl(key, "old-baseline")]));
 
         await Run(IndexMode.RebuildClearBaselines);
@@ -180,7 +180,7 @@ public class RebuildJobTests
         _keyValues.SetValue(Constants.DefaultCultureKey, "de-DE");
         var key = Guid.NewGuid();
         _source.Add(Doc(key, 1));
-        _store.Save(new IndexResult(
+        _store.Seed(new IndexResult(
             new DocumentRow(key, 1, null, "-1,1", "00001", 1, "page", Guid.Empty, "n"), [StoredNl(key, "old-baseline")]));
         _source.OnGetPage = _ => throw new InvalidOperationException("Database gone");
         await Assert.ThrowsAsync<InvalidOperationException>(() => Run(IndexMode.RebuildClearBaselines));
@@ -199,7 +199,7 @@ public class RebuildJobTests
     {
         var key = Guid.NewGuid();
         _source.Add(Doc(key, 1));
-        _store.Save(new IndexResult(
+        _store.Seed(new IndexResult(
             new DocumentRow(key, 1, null, "-1,1", "00001", 1, "page", Guid.Empty, "n"), [StoredNl(key, "old-baseline")]));
 
         // The worker indexes the document (Save mode keeps the stored baseline) after the page was read: the rebuild then skips it.
@@ -237,8 +237,8 @@ public class RebuildJobTests
 
         await Run();
 
-        Assert.NotNull(_store.GetDocument(created));
-        Assert.Equal(251, _store.Count());
+        Assert.NotNull(_store.Document(created));
+        Assert.Equal(251, _store.Keys.Count);
     }
 
     [Fact]
@@ -273,8 +273,8 @@ public class RebuildJobTests
 
         await Run();
 
-        Assert.Null(_store.GetDocument(keys[0]));
-        Assert.Equal(2, _store.Count());
+        Assert.Null(_store.Document(keys[0]));
+        Assert.Equal(2, _store.Keys.Count);
     }
 
     [Fact]
@@ -297,7 +297,7 @@ public class RebuildJobTests
 
         await Run();
 
-        Assert.Equal(600, _store.Count());
+        Assert.Equal(600, _store.Keys.Count);
         Assert.All(keys, key => Assert.Equal("mark", _store.GetVariants(key).Single(v => v.Culture == Nl).BaselineFingerprint));
     }
 
@@ -333,7 +333,7 @@ public class RebuildJobTests
 
         Assert.Equal(12, _source.GetPageCalls); // 11 pages of 200 and one of 100
         Assert.Equal(3, _store.SaveManyCalls); // 1000, 1000 and 300 documents; nothing to remove
-        Assert.Equal(2300, _store.Count());
+        Assert.Equal(2300, _store.Keys.Count);
     }
 
     [Fact]
@@ -363,12 +363,12 @@ public class RebuildJobTests
         for (var i = 0; i < 450; i++)
         {
             var key = Guid.NewGuid();
-            _store.Save(new IndexResult(new DocumentRow(key, 1000 + i, null, "-1,9", "00009", 1, "page", Guid.Empty, "gone"), []));
+            _store.Seed(new IndexResult(new DocumentRow(key, 1000 + i, null, "-1,9", "00009", 1, "page", Guid.Empty, "gone"), []));
         }
 
         await Run();
 
-        Assert.Equal(0, _store.Count());
+        Assert.Empty(_store.Keys);
         Assert.Equal(3, _store.SaveManyCalls);
     }
 
@@ -377,7 +377,7 @@ public class RebuildJobTests
     {
         AddDocuments(450);
         var orphan = Guid.NewGuid();
-        _store.Save(new IndexResult(
+        _store.Seed(new IndexResult(
             new DocumentRow(orphan, 99, null, "-1,99", "00099", 1, "page", Guid.Empty, "orphan"), []));
         _source.OnGetPage = page =>
         {
@@ -389,7 +389,7 @@ public class RebuildJobTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => Run());
 
-        Assert.NotNull(_store.GetDocument(orphan));
+        Assert.NotNull(_store.Document(orphan));
         Assert.Empty(_keyValues.Values);
     }
 
@@ -398,7 +398,7 @@ public class RebuildJobTests
     {
         AddDocuments(450);
         var orphan = Guid.NewGuid();
-        _store.Save(new IndexResult(
+        _store.Seed(new IndexResult(
             new DocumentRow(orphan, 99, null, "-1,99", "00099", 1, "page", Guid.Empty, "orphan"), []));
         using var cancel = new CancellationTokenSource();
         _source.OnGetPage = page =>
@@ -411,7 +411,7 @@ public class RebuildJobTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Run(cancellationToken: cancel.Token));
 
-        Assert.NotNull(_store.GetDocument(orphan));
+        Assert.NotNull(_store.Document(orphan));
         Assert.Empty(_keyValues.Values);
     }
 
@@ -467,7 +467,7 @@ public class RebuildJobTests
             _runner = new JobRunner(_keyValues, provider.GetRequiredService<IServiceScopeFactory>(), _time, new EditorActivity(_time), new ListLogger<JobRunner>());
             _scheduler = new RebuildScheduler(_runner, _sites, _keyValues, new ListLogger<RebuildScheduler>());
             _source.Add(Doc(_key, 1));
-            _store.Save(new IndexResult(
+            _store.Seed(new IndexResult(
                 new DocumentRow(_key, 1, null, "-1,1", "00001", 1, "page", Guid.Empty, "n"), [StoredNl(_key, "old-baseline")]));
         }
 

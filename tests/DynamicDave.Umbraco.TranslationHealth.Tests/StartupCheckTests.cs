@@ -114,7 +114,7 @@ public class StartupCheckTests
         await Task.Delay(50);
 
         Assert.Null(_runner.Current());
-        Assert.Equal(0, _store.Count());
+        Assert.Empty(_store.Keys);
     }
 
     [Fact]

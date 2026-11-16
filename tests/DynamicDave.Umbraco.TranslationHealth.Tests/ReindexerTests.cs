@@ -43,10 +43,10 @@ public class ReindexerTests
 
         _reindexer.Reindex(key, IndexMode.Save);
 
-        Assert.Equal(key, _store.GetDocument(key)!.Key);
+        Assert.Equal(key, _store.Document(key)!.Key);
         Assert.Equal(["en-US", "nl-NL"], _store.GetVariants(key).Select(v => v.Culture).Order());
         Assert.All(_store.GetVariants(key), v => Assert.Equal(CellStatus.Published, v.Status));
-        Assert.Equal("en-US name", _store.GetDocument(key)!.Name);
+        Assert.Equal("en-US name", _store.Document(key)!.Name);
     }
 
     [Fact]
@@ -59,7 +59,7 @@ public class ReindexerTests
         _source.Remove(key);
         _reindexer.Reindex(key, IndexMode.Save);
 
-        Assert.Null(_store.GetDocument(key));
+        Assert.Null(_store.Document(key));
         Assert.Empty(_store.GetVariants(key));
     }
 
@@ -72,7 +72,7 @@ public class ReindexerTests
 
         _reindexer.Remove(key);
 
-        Assert.Null(_store.GetDocument(key));
+        Assert.Null(_store.Document(key));
     }
 
     [Fact]
@@ -89,7 +89,7 @@ public class ReindexerTests
 
         Assert.Equal(CellStatus.NotApplicable, _store.GetVariants(key).Single(v => v.Culture == Nl).Status);
         Assert.Equal(CellStatus.Published, _store.GetVariants(key).Single(v => v.Culture == En).Status);
-        Assert.Equal(root, _store.GetDocument(key)!.SiteRootKey);
+        Assert.Equal(root, _store.Document(key)!.SiteRootKey);
     }
 
     [Fact]
@@ -100,7 +100,7 @@ public class ReindexerTests
 
         _reindexer.Reindex(key, IndexMode.Save);
 
-        Assert.Equal(Guid.Empty, _store.GetDocument(key)!.SiteRootKey);
+        Assert.Equal(Guid.Empty, _store.Document(key)!.SiteRootKey);
         Assert.All(_store.GetVariants(key), v => Assert.NotEqual(CellStatus.NotApplicable, v.Status));
     }
 

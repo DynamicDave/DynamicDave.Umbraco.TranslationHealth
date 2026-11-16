@@ -34,7 +34,7 @@ public class DocumentTranslationsTests
     private static VariantRow Row(Guid key, string culture, CellStatus status, Guid? markedBy = null) => new(
         key, culture, status, false, TrackingMode.Fingerprint, Now, null, null, null, null, null, markedBy, markedBy is null ? null : Now, null);
 
-    private void Seed(Guid key, params VariantRow[] rows) => _store.Save(new IndexResult(
+    private void Seed(Guid key, params VariantRow[] rows) => _store.Seed(new IndexResult(
         new DocumentRow(key, 1, null, "-1,1", "00001", 1, "page", Guid.Empty, "Doc"), rows));
 
     [Fact]

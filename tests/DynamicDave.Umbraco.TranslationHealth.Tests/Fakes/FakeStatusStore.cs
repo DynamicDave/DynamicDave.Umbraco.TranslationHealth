@@ -10,9 +10,7 @@ internal sealed class FakeStatusStore : ITranslationStatusStore
     private readonly Dictionary<Guid, DocumentRow> _documents = [];
     private readonly Dictionary<Guid, List<VariantRow>> _variants = [];
 
-    public int SaveCalls { get; private set; }
-
-    /// <summary>Runs at the start of <see cref="Save"/> (outside the lock), e.g. to block a writer.</summary>
+    /// <summary>Runs at the start of <see cref="SaveMany"/> (outside the lock), e.g. to block a writer.</summary>
     public Action? OnSave { get; set; }
 
     public IReadOnlyCollection<Guid> Keys
@@ -70,20 +68,20 @@ internal sealed class FakeStatusStore : ITranslationStatusStore
         }
     }
 
-    public DocumentRow? GetDocument(Guid key)
+    /// <summary>Test setup: stores the rows of a document directly (no write is counted, <see cref="OnSave"/> does not run).</summary>
+    public void Seed(IndexResult result)
     {
-        lock (_gate) return _documents.GetValueOrDefault(key);
-    }
-
-    public void Save(IndexResult result)
-    {
-        OnSave?.Invoke();
         lock (_gate)
         {
-            SaveCalls++;
             _documents[result.Document.Key] = result.Document;
             _variants[result.Document.Key] = [.. result.Variants];
         }
+    }
+
+    /// <summary>Test inspection: the stored document row, or null.</summary>
+    public DocumentRow? Document(Guid key)
+    {
+        lock (_gate) return _documents.GetValueOrDefault(key);
     }
 
     public void SaveVariant(VariantRow row)
@@ -95,22 +93,5 @@ internal sealed class FakeStatusStore : ITranslationStatusStore
             rows.Add(row);
             _variants[row.DocumentKey] = rows;
         }
-    }
-
-    public void Remove(IReadOnlyCollection<Guid> documentKeys)
-    {
-        lock (_gate)
-        {
-            foreach (var key in documentKeys)
-            {
-                _documents.Remove(key);
-                _variants.Remove(key);
-            }
-        }
-    }
-
-    public int Count()
-    {
-        lock (_gate) return _documents.Count;
     }
 }

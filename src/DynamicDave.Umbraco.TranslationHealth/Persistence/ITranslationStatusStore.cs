@@ -10,13 +10,8 @@ public interface ITranslationStatusStore
     /// <summary>The variants of several documents (chunked internally); documents without rows map to an empty list.</summary>
     IReadOnlyDictionary<Guid, IReadOnlyList<VariantRow>> GetVariants(IReadOnlyCollection<Guid> documentKeys);
 
-    DocumentRow? GetDocument(Guid key);
-
     /// <summary>The keys of all stored documents.</summary>
     IReadOnlyList<Guid> GetKeys();
-
-    /// <summary>Upserts the document and replaces its variants, in one scope.</summary>
-    void Save(IndexResult result);
 
     /// <summary>
     /// Replaces the rows of several documents and removes others, in ONE write transaction that starts with a write
@@ -26,9 +21,4 @@ public interface ITranslationStatusStore
 
     /// <summary>Upserts one variant of an already indexed document.</summary>
     void SaveVariant(VariantRow row);
-
-    /// <summary>Removes the documents and their variants.</summary>
-    void Remove(IReadOnlyCollection<Guid> documentKeys);
-
-    int Count();
 }
