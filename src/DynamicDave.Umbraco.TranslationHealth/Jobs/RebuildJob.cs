@@ -66,13 +66,20 @@ public sealed class RebuildJob(
         using var tracking = reindexer.BeginTracking();
         var seen = new HashSet<Guid>();
         var pending = new List<DocumentSnapshot>();
-        for (long page = 0; ; page++)
+        var afterId = int.MinValue;
+        while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var documents = snapshots.GetPage(page, PageSize, out var total);
+            var documents = snapshots.GetPage(afterId, PageSize, out var remaining);
+            var total = seen.Count + remaining;
             seen.UnionWith(documents.Select(document => document.Key));
             pending.AddRange(documents);
-            var last = documents.Count < PageSize || (page + 1) * PageSize >= total;
+            var last = documents.Count < PageSize || documents.Count >= remaining;
+            if (documents.Count > 0)
+            {
+                afterId = documents[^1].Id;
+            }
+
             if (pending.Count >= WriteChunkSize || last)
             {
                 // A snapshot that is older by a few pages is fine: documents handled since BeginTracking are skipped.
@@ -88,8 +95,9 @@ public sealed class RebuildJob(
             }
         }
 
-        // Only a complete pass gets here (an exception or a cancel skipped this). Paging is by id, but deletions meanwhile shift the
-        // offsets and can skip live documents, so the rows of unseen documents are checked again, not just deleted.
+        // Only a complete pass gets here (an exception or a cancel skipped this). Paging is by id (keyset), so the pass saw every
+        // document that lived throughout. An unseen document with rows can still be live (restored from the recycle bin after
+        // the pass got past its id, or of a type included meanwhile), so the rows of unseen documents are checked again, not just deleted.
         cancellationToken.ThrowIfCancellationRequested();
         progress.Report(seen.Count, seen.Count, JobPhases.RemovingOrphans);
         activity.WaitUntilQuiet(cancellationToken);

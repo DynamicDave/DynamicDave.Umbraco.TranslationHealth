@@ -209,7 +209,7 @@ public class ContentChangeHandlerTests
     {
         public DynamicDave.Umbraco.TranslationHealth.Content.DocumentSnapshot? Get(Guid key) => throw new InvalidOperationException();
 
-        public IReadOnlyList<DynamicDave.Umbraco.TranslationHealth.Content.DocumentSnapshot> GetPage(long pageIndex, int pageSize, out long total) => throw new InvalidOperationException();
+        public IReadOnlyList<DynamicDave.Umbraco.TranslationHealth.Content.DocumentSnapshot> GetPage(int afterId, int pageSize, out long remaining) => throw new InvalidOperationException();
 
         public IReadOnlyList<Guid> DescendantKeys(Guid key) => throw new InvalidOperationException("Navigation not ready");
 

@@ -154,17 +154,18 @@ public sealed class UmbracoContentSnapshotSource(
         return Build([content])[0];
     }
 
-    public IReadOnlyList<DocumentSnapshot> GetPage(long pageIndex, int pageSize, out long total)
+    public IReadOnlyList<DocumentSnapshot> GetPage(int afterId, int pageSize, out long remaining)
     {
         var typeIds = IncludedTypeIds();
         if (typeIds.Length == 0)
         {
-            total = 0;
+            remaining = 0;
             return [];
         }
 
-        var notTrashed = scopeProvider.CreateQuery<IContent>().Where(content => content.Trashed == false);
-        var page = contentService.GetPagedOfTypes(typeIds, pageIndex, pageSize, out total, notTrashed, Ordering.By("id")).ToList();
+        // Always the first page of what lies above the last id: the filter does the paging, not the offset.
+        var query = scopeProvider.CreateQuery<IContent>().Where(content => content.Trashed == false && content.Id > afterId);
+        var page = contentService.GetPagedOfTypes(typeIds, 0, pageSize, out remaining, query, Ordering.By("id")).ToList();
         return Build(page);
     }
 

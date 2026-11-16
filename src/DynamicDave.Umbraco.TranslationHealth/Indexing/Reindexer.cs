@@ -113,8 +113,8 @@ public sealed class Reindexer(
 
     /// <summary>
     /// Handles the stored documents that a rebuild did not see and that were not touched while <paramref name="tracker"/>
-    /// was active. Paging can skip live documents when others are deleted meanwhile, so each candidate is looked up
-    /// again: gone documents lose their rows, live ones are re-indexed. Works in chunks of <see cref="OrphanChunkSize"/>
+    /// was active. An unseen document can still be live (restored from the recycle bin after the pass got past its id),
+    /// so each candidate is looked up again: gone documents lose their rows, live ones are re-indexed. Works in chunks of <see cref="OrphanChunkSize"/>
     /// with the lock taken per chunk (a content load per candidate must not block the worker for long), one write per chunk.
     /// </summary>
     /// <param name="beforeWrite">

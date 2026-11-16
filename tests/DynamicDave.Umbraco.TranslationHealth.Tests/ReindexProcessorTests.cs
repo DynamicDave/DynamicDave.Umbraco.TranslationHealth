@@ -131,8 +131,8 @@ public class ReindexProcessorTests
         public DocumentSnapshot? Get(Guid key) =>
             FailFor.Contains(key) ? throw new InvalidOperationException("Broken") : _inner.Get(key);
 
-        public IReadOnlyList<DocumentSnapshot> GetPage(long pageIndex, int pageSize, out long total) =>
-            _inner.GetPage(pageIndex, pageSize, out total);
+        public IReadOnlyList<DocumentSnapshot> GetPage(int afterId, int pageSize, out long remaining) =>
+            _inner.GetPage(afterId, pageSize, out remaining);
 
         public IReadOnlyList<Guid> DescendantKeys(Guid key) => _inner.DescendantKeys(key);
 

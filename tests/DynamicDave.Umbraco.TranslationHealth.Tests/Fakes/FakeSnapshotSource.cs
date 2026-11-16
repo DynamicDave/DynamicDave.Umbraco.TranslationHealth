@@ -10,7 +10,7 @@ internal sealed class FakeSnapshotSource : IContentSnapshotSource
 
     public Dictionary<Guid, List<Guid>> Descendants { get; } = [];
 
-    /// <summary>Runs in every <see cref="GetPage"/> after the page was read (outside the lock): what the caller holds is then already stale.</summary>
+    /// <summary>Runs in every <see cref="GetPage"/> after the page was read (outside the lock), with the number of the call (0 for the first): what the caller holds is then already stale.</summary>
     public Action<long>? OnGetPage { get; set; }
 
     /// <summary>Documents that <see cref="Get"/> returns but pages leave out, like documents created after the pager passed.</summary>
@@ -55,18 +55,19 @@ internal sealed class FakeSnapshotSource : IContentSnapshotSource
         lock (_gate) return _documents.FirstOrDefault(d => d.Key == key);
     }
 
-    public IReadOnlyList<DocumentSnapshot> GetPage(long pageIndex, int pageSize, out long total)
+    public IReadOnlyList<DocumentSnapshot> GetPage(int afterId, int pageSize, out long remaining)
     {
         List<DocumentSnapshot> page;
+        long call;
         lock (_gate)
         {
-            GetPageCalls++;
-            var visible = _documents.Where(d => !HiddenFromPages.Contains(d.Key)).ToList();
-            total = visible.Count;
-            page = visible.Skip((int)(pageIndex * pageSize)).Take(pageSize).ToList();
+            call = GetPageCalls++;
+            var above = _documents.Where(d => !HiddenFromPages.Contains(d.Key) && d.Id > afterId).OrderBy(d => d.Id).ToList();
+            remaining = above.Count;
+            page = above.Take(pageSize).ToList();
         }
 
-        OnGetPage?.Invoke(pageIndex);
+        OnGetPage?.Invoke(call);
         return page;
     }
 

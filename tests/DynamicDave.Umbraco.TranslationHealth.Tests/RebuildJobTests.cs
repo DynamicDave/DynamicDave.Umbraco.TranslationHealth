@@ -280,20 +280,35 @@ public class RebuildJobTests
     }
 
     [Fact]
-    public async Task Rebuild_keeps_the_rows_of_live_documents_that_a_move_shifted_out_of_the_pages()
+    public async Task Rebuild_keeps_the_rows_of_live_documents_that_the_pages_did_not_return()
     {
         var keys = AddDocuments(600);
         await Run();
-        var baseline = new Dictionary<Guid, VariantRow>();
         foreach (var key in keys)
         {
             var nl = _store.GetVariants(key).Single(v => v.Culture == Nl);
-            baseline[key] = nl with { BaselineFingerprint = "mark", BaselineSource = BaselineSource.MarkedUpToDate };
-            _store.SaveVariant(baseline[key]);
+            _store.SaveVariant(nl with { BaselineFingerprint = "mark", BaselineSource = BaselineSource.MarkedUpToDate });
         }
 
-        // While page 1 is read, a block of documents moves from the first page behind the cursor: the pages shift and
-        // documents 400..449 are never returned. Their rows (with marks) must survive.
+        // Documents the pass does not see although they live (e.g. restored from the recycle bin after it got past their
+        // ids): the orphan check finds them alive, so their rows (with marks) must survive.
+        foreach (var key in keys.Skip(400).Take(50))
+        {
+            _source.HiddenFromPages.Add(key);
+        }
+
+        await Run();
+
+        Assert.Equal(600, _store.Count());
+        Assert.All(keys, key => Assert.Equal("mark", _store.GetVariants(key).Single(v => v.Culture == Nl).BaselineFingerprint));
+    }
+
+    [Fact]
+    public async Task Documents_deleted_while_the_rebuild_pages_do_not_make_it_skip_others()
+    {
+        var keys = AddDocuments(450);
+
+        // After the second page was read, documents of the first page are deleted: offset paging would then skip 401..450.
         _source.OnGetPage = page =>
         {
             if (page == 1)
@@ -301,17 +316,14 @@ public class RebuildJobTests
                 _source.OnGetPage = null;
                 foreach (var key in keys.Take(50))
                 {
-                    var document = _source.Get(key)!;
                     _source.Remove(key);
-                    _source.Add(document);
                 }
             }
         };
 
         await Run();
 
-        Assert.Equal(600, _store.Count());
-        Assert.All(keys, key => Assert.Equal("mark", _store.GetVariants(key).Single(v => v.Culture == Nl).BaselineFingerprint));
+        Assert.All(keys.Skip(50), key => Assert.NotEmpty(_store.GetVariants(key)));
     }
 
     [Fact]
