@@ -20,6 +20,7 @@ public class DocumentTranslationsTests
     private readonly FakeSiteSource _sites = new() { Default = "nl-NL" };
     private readonly FakeStatusStore _store = new();
     private readonly Services _services = new();
+    private readonly ReindexQueue _queue = new();
     private readonly DocumentTranslations _translations;
 
     public DocumentTranslationsTests()
@@ -27,7 +28,7 @@ public class DocumentTranslationsTests
         _sites.Cultures.Clear();
         _sites.Cultures.AddRange(["en-US", "nl-NL", "de-DE"]);
         var reindexer = new Reindexer(_source, _sites, _store, new ManualTimeProvider(new DateTimeOffset(Now)));
-        _translations = new DocumentTranslations(_store, reindexer, _sites, _services.Languages, _services.Users);
+        _translations = new DocumentTranslations(_store, reindexer, _queue, _sites, _services.Languages, _services.Users);
     }
 
     private static VariantRow Row(Guid key, string culture, CellStatus status, Guid? markedBy = null) => new(
@@ -51,6 +52,44 @@ public class DocumentTranslationsTests
         Assert.NotNull(result);
         Assert.Contains(result, t => t.Culture == "en-US" && t.Row.Status == CellStatus.Published);
         Assert.NotEmpty(_store.GetVariants(key));
+    }
+
+    [Fact]
+    public void Get_indexes_a_queued_document_first_and_returns_the_fresh_rows()
+    {
+        var key = Guid.NewGuid();
+        Seed(key, Row(key, "nl-NL", CellStatus.Draft), Row(key, "en-US", CellStatus.Draft));
+        _source.Add(FakeSnapshotSource.Doc(
+            key,
+            1,
+            new CultureSnapshot("en-US", VariantBaseState.Published, Now, Now, "Home", "a"),
+            new CultureSnapshot("nl-NL", VariantBaseState.Published, Now, Now, "Thuis", "b")));
+        _queue.Enqueue([key]); // saved, but the worker has not indexed it yet
+
+        var result = _translations.Get(key)!;
+
+        Assert.Equal(CellStatus.Published, result.Single(t => t.Culture == "nl-NL").Row.Status);
+        Assert.Equal(CellStatus.Published, result.Single(t => t.Culture == "en-US").Row.Status);
+        Assert.Equal(1, _queue.Count); // the worker indexes it again, which changes nothing
+    }
+
+    [Fact]
+    public void Get_does_not_index_a_document_that_is_not_queued()
+    {
+        var key = Guid.NewGuid();
+        Seed(key, Row(key, "nl-NL", CellStatus.Draft), Row(key, "en-US", CellStatus.Draft));
+        _source.Add(FakeSnapshotSource.Doc(
+            key,
+            1,
+            new CultureSnapshot("en-US", VariantBaseState.Published, Now, Now, "Home", "a"),
+            new CultureSnapshot("nl-NL", VariantBaseState.Published, Now, Now, "Thuis", "b")));
+        _queue.Enqueue([Guid.NewGuid()]);
+        var writes = _store.SaveManyCalls;
+
+        var result = _translations.Get(key)!;
+
+        Assert.Equal(CellStatus.Draft, result.Single(t => t.Culture == "nl-NL").Row.Status);
+        Assert.Equal(writes, _store.SaveManyCalls);
     }
 
     [Fact]

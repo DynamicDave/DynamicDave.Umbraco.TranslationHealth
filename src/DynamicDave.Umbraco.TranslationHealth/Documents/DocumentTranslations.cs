@@ -12,19 +12,22 @@ public record DocumentTranslation(string Culture, string LanguageName, bool IsDe
 public sealed class DocumentTranslations(
     ITranslationStatusStore store,
     Reindexer reindexer,
+    ReindexQueue queue,
     ISiteSource sites,
     ILanguageService languageService,
     IUserService userService)
 {
     /// <summary>
     /// The languages of the document in Umbraco's language order with the default language first (not applicable ones
-    /// included). Documents without rows are indexed first; null when there are still none (the document is not
-    /// culture-variant, is excluded or does not exist).
+    /// included). Documents without rows, and documents still waiting in the <see cref="ReindexQueue"/> (the tab reloads
+    /// right after a save, before the worker gets to it), are indexed first; null when there are still no rows (the
+    /// document is not culture-variant, is excluded or does not exist). A queued key stays queued: the worker indexes it
+    /// again, which changes nothing.
     /// </summary>
     public IReadOnlyList<DocumentTranslation>? Get(Guid documentKey)
     {
         var rows = store.GetVariants(documentKey);
-        if (rows.Count == 0)
+        if (rows.Count == 0 || queue.Contains(documentKey))
         {
             reindexer.Reindex(documentKey, IndexMode.Save);
             rows = store.GetVariants(documentKey);

@@ -30,6 +30,12 @@ public sealed class ReindexQueue
         }
     }
 
+    /// <summary>Whether a re-index or removal of the document is still waiting.</summary>
+    public bool Contains(Guid key)
+    {
+        lock (_gate) return _pending.ContainsKey(key);
+    }
+
     public void Enqueue(IEnumerable<Guid> keys) => Add(keys, remove: false);
 
     public void EnqueueRemoval(IEnumerable<Guid> keys) => Add(keys, remove: true);

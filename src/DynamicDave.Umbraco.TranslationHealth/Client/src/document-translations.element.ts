@@ -35,7 +35,8 @@ export class DdTranslationHealthDocumentElement extends UmbLitElement {
         },
         'ddTranslationHealthUnique',
       );
-      // Changes after every save and publish; the server updates the rows before it responds.
+      // Changes after every save and publish. The worker indexes the save a few seconds later, but the server indexes a
+      // document that is still queued before it answers, so the reload shows the saved state.
       this.observe(
         ctx?.persistedData,
         (data) => {
