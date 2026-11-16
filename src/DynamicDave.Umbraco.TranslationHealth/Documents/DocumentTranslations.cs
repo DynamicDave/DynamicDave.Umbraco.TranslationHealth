@@ -22,15 +22,27 @@ public sealed class DocumentTranslations(
     /// included). Documents without rows, and documents still waiting in the <see cref="ReindexQueue"/> (the tab reloads
     /// right after a save, before the worker gets to it), are indexed first; null when there are still no rows (the
     /// document is not culture-variant, is excluded or does not exist). A queued key stays queued: the worker indexes it
-    /// again, which changes nothing.
+    /// again, which changes nothing. When indexing a queued document fails, the stored rows are shown; the worker retries.
     /// </summary>
     public IReadOnlyList<DocumentTranslation>? Get(Guid documentKey)
     {
         var rows = store.GetVariants(documentKey);
-        if (rows.Count == 0 || queue.Contains(documentKey))
+        if (rows.Count == 0)
         {
             reindexer.Reindex(documentKey, IndexMode.Save);
             rows = store.GetVariants(documentKey);
+        }
+        else if (queue.Contains(documentKey))
+        {
+            try
+            {
+                reindexer.Reindex(documentKey, IndexMode.Save);
+                rows = store.GetVariants(documentKey);
+            }
+            catch (IndexWriteException)
+            {
+                // Keep the stored rows: they are at most one save behind, and the key is still queued.
+            }
         }
 
         if (rows.Count == 0)

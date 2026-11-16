@@ -74,6 +74,25 @@ public class DocumentTranslationsTests
     }
 
     [Fact]
+    public void Get_returns_the_stored_rows_when_indexing_a_queued_document_fails()
+    {
+        var key = Guid.NewGuid();
+        Seed(key, Row(key, "nl-NL", CellStatus.Draft), Row(key, "en-US", CellStatus.Draft));
+        _source.Add(FakeSnapshotSource.Doc(
+            key,
+            1,
+            new CultureSnapshot("en-US", VariantBaseState.Published, Now, Now, "Home", "a"),
+            new CultureSnapshot("nl-NL", VariantBaseState.Published, Now, Now, "Thuis", "b")));
+        _queue.Enqueue([key]);
+        _store.OnSave = () => throw new InvalidOperationException("database is locked");
+
+        var result = _translations.Get(key)!;
+
+        Assert.Equal(CellStatus.Draft, result.Single(t => t.Culture == "nl-NL").Row.Status);
+        Assert.Equal(1, _queue.Count); // the worker retries it
+    }
+
+    [Fact]
     public void Get_does_not_index_a_document_that_is_not_queued()
     {
         var key = Guid.NewGuid();
